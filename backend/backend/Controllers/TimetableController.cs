@@ -24,8 +24,8 @@ public class TimetableController(IEnumerable<ITimetableSource> sources) : Contro
         var query = new TimetableQuery(request.From, request.To,
             User.FindFirstValue(ClaimTypes.NameIdentifier), request.Selections);
 
-        // Concurrent is safe only while at most one source uses the scoped AppDbContext (the manual one).
-        var perSource = await Task.WhenAll(sources.Select(s => s.GetSessionsAsync(query, ct)));
-        return Ok(perSource.SelectMany(s => s).OrderBy(s => s.StartAt, StringComparer.Ordinal));
+        var sessions = new List<TimetableSession>();
+        foreach (var source in sources) sessions.AddRange(await source.GetSessionsAsync(query, ct));
+        return Ok(sessions.OrderBy(s => s.StartAt, StringComparer.Ordinal));
     }
 }

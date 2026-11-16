@@ -268,6 +268,20 @@ public sealed class ManualFacultyTests(ApiFactory api)
     }
 
     [Fact]
+    public async Task Subject_names_are_trimmed_on_create_and_rename()
+    {
+        var client = await api.CreateSignedInClientAsync();
+        var faculty = await CreateFacultyAsync(client);
+        var subject = await CreateSubjectAsync(client, faculty, "  Arapski  ");
+        await CreateSlotAsync(client, subject, Slot(2, "09:00", "10:00"));
+
+        Assert.Equal("Arapski", (await TimetableAsync(client, "2026-11-02", "2026-11-08")).Single().GetProperty("subject").GetString());
+
+        var res = await client.PutAsJsonAsync($"{Faculties}/subjects/{subject}", new {name = " Tefsir "});
+        Assert.Equal("Tefsir", (await res.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("name").GetString());
+    }
+
+    [Fact]
     public async Task Rejects_a_term_that_ends_before_it_starts()
     {
         var client = await api.CreateSignedInClientAsync();

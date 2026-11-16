@@ -78,6 +78,19 @@ public sealed class SlotExceptionTests(ApiFactory api)
         Assert.Equal("2026-11-16", moved.GetProperty("occurrenceDate").GetString());
     }
 
+    [Theory]
+    [InlineData("2026-11-18T13:00:00Z", "2026-11-18T14:30:00Z")]
+    [InlineData("2026-11-18T08:00:00-05:00", "2026-11-18T09:30:00-05:00")]
+    public async Task Moved_time_sent_with_an_offset_is_stored_as_Ljubljana_wall_time(string newStart, string newEnd)
+    {
+        var client = await api.CreateSignedInClientAsync();
+        var (_, slot) = await MondaySlotAsync(client);
+
+        Assert.Equal(HttpStatusCode.OK, (await MoveAsync(client, slot, "2026-11-16", newStart, newEnd)).StatusCode);
+
+        Assert.Equal([("2026-11-18T14:00:00", "moved")], await TimetableAsync(client, "2026-11-16", "2026-11-22"));
+    }
+
     [Fact]
     public async Task Moving_into_another_week_shows_it_in_that_weeks_range()
     {

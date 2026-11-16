@@ -23,16 +23,10 @@ public sealed class ManualTimetableSource(AppDbContext db) : ITimetableSource
     private static IEnumerable<TimetableSession> Expand(ManualFaculty faculty, DateOnly from, DateOnly to)
     {
         var source = new SessionSource($"manual:{faculty.Id}", "manual", faculty.Name);
-        var first = from > faculty.TermStart ? from : faculty.TermStart;
-        var last = to < faculty.TermEnd ? to : faculty.TermEnd;
-
-        for (var date = first; date <= last; date = date.AddDays(1))
+        for (var date = from; date <= to; date = date.AddDays(1))
         {
-            if (faculty.SkippedDates.Contains(date)) continue;
-            var isoDay = date.DayOfWeek == DayOfWeek.Sunday ? 7 : (int)date.DayOfWeek;
-
             foreach (var subject in faculty.Subjects)
-            foreach (var slot in subject.Slots.Where(s => s.DayOfWeek == isoDay && InPickedGroup(subject, s)))
+            foreach (var slot in subject.Slots.Where(s => faculty.Occurs(s, date) && InPickedGroup(subject, s)))
             {
                 var exception = slot.Exceptions.FirstOrDefault(e => e.OriginalDate == date);
                 if (exception?.Kind == SlotException.Moved) continue; // shown at its new time below

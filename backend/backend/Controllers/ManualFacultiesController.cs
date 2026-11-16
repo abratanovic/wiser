@@ -60,7 +60,7 @@ public class ManualFacultiesController(AppDbContext db) : ControllerBase
     public async Task<IActionResult> CreateSubject(int facultyId, [FromBody] SubjectRequest req)
     {
         if (!await MyFaculties.AnyAsync(f => f.Id == facultyId)) return NotFound();
-        var subject = new ManualSubject {FacultyId = facultyId, Name = req.Name};
+        var subject = new ManualSubject {FacultyId = facultyId, Name = req.Name.Trim()};
         db.ManualSubjects.Add(subject);
         await db.SaveChangesAsync();
         return Ok(subject);
@@ -77,7 +77,7 @@ public class ManualFacultiesController(AppDbContext db) : ControllerBase
             ModelState.AddModelError(nameof(req.PickedGroup), "The subject has no slot in this group");
             return ValidationProblem(ModelState);
         }
-        subject.Name = req.Name;
+        subject.Name = req.Name.Trim();
         subject.PickedGroup = group;
         await db.SaveChangesAsync();
         return Ok(subject);
@@ -163,11 +163,17 @@ public sealed class ExceptionRequest : IValidatableObject
     {
         var moved = Kind == SlotException.Moved;
         e.Kind = Kind;
-        // Wall-clock time: Npgsql only writes Unspecified kinds to "timestamp without time zone".
-        e.NewStart = moved ? DateTime.SpecifyKind(NewStart!.Value, DateTimeKind.Unspecified) : null;
-        e.NewEnd = moved ? DateTime.SpecifyKind(NewEnd!.Value, DateTimeKind.Unspecified) : null;
+        e.NewStart = moved ? WallTime(NewStart!.Value) : null;
+        e.NewEnd = moved ? WallTime(NewEnd!.Value) : null;
         e.NewRoom = moved && !string.IsNullOrWhiteSpace(NewRoom) ? NewRoom.Trim() : null;
     }
+
+    private static readonly TimeZoneInfo Ljubljana = TimeZoneInfo.FindSystemTimeZoneById("Europe/Ljubljana");
+
+    /// <summary>Ljubljana wall-clock time (Unspecified kind, which Npgsql needs for "timestamp without time zone").
+    /// A time sent with an offset or Z arrives as Utc/Local and is converted; one without is taken as is.</summary>
+    private static DateTime WallTime(DateTime t) =>
+        t.Kind == DateTimeKind.Unspecified ? t : DateTime.SpecifyKind(TimeZoneInfo.ConvertTime(t, Ljubljana), DateTimeKind.Unspecified);
 }
 
 public sealed class FacultyRequest : IValidatableObject
