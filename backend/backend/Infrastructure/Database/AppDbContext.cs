@@ -12,6 +12,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<ManualFaculty> ManualFaculties { get; set; }
     public DbSet<ManualSubject> ManualSubjects { get; set; }
     public DbSet<ManualSlot> ManualSlots { get; set; }
+    public DbSet<SlotException> SlotExceptions { get; set; }
     
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

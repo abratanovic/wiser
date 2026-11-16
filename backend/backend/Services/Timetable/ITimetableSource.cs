@@ -46,6 +46,8 @@ public sealed record TimetableSession(
     DateOnly? OccurrenceDate = null)
 {
     public const string Scheduled = "scheduled";
+    public const string Cancelled = "cancelled";
+    public const string Moved = "moved";
 
     public static SessionSource WiseSource(string name) => new("wise", "wise", name);
 }

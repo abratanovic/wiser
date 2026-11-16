@@ -43,9 +43,11 @@ public class ManualFacultiesController(AppDbContext db) : ControllerBase
     [HttpPut("{id:int}")]
     public async Task<IActionResult> UpdateFaculty(int id, [FromBody] FacultyRequest req)
     {
-        var faculty = await MyFaculties.FirstOrDefaultAsync(f => f.Id == id);
+        var faculty = await MyFaculties.Include(f => f.Subjects).ThenInclude(s => s.Slots).ThenInclude(s => s.Exceptions)
+            .FirstOrDefaultAsync(f => f.Id == id);
         if (faculty == null) return NotFound();
         req.ApplyTo(faculty);
+        DropStaleExceptions(faculty, faculty.Subjects.SelectMany(s => s.Slots));
         await db.SaveChangesAsync();
         return Ok(faculty);
     }
@@ -92,9 +94,10 @@ public class ManualFacultiesController(AppDbContext db) : ControllerBase
     [HttpPut("slots/{id:int}")]
     public async Task<IActionResult> UpdateSlot(int id, [FromBody] SlotRequest req)
     {
-        var slot = await MySlots.FirstOrDefaultAsync(s => s.Id == id);
+        var slot = await MySlots.Include(s => s.Exceptions).Include(s => s.Subject.Faculty).FirstOrDefaultAsync(s => s.Id == id);
         if (slot == null) return NotFound();
         req.ApplyTo(slot);
+        DropStaleExceptions(slot.Subject.Faculty, [slot]);
         await db.SaveChangesAsync();
         return Ok(slot);
     }
@@ -102,6 +105,62 @@ public class ManualFacultiesController(AppDbContext db) : ControllerBase
     [HttpDelete("slots/{id:int}")]
     public async Task<IActionResult> DeleteSlot(int id) =>
         await MySlots.Where(s => s.Id == id).ExecuteDeleteAsync() == 0 ? NotFound() : NoContent();
+
+    /// <summary>After an edit, forget changes to occurrences that no longer happen (day changed, outside term, skipped).</summary>
+    private void DropStaleExceptions(ManualFaculty faculty, IEnumerable<ManualSlot> slots) =>
+        db.SlotExceptions.RemoveRange(slots.SelectMany(s => s.Exceptions.Where(e => !faculty.Occurs(s, e.OriginalDate))));
+
+    /// <summary>Cancel or move the occurrence of a slot on <paramref name="date"/>, replacing any earlier change.</summary>
+    [HttpPut("slots/{slotId:int}/exceptions/{date}")]
+    public async Task<IActionResult> PutException(int slotId, DateOnly date, [FromBody] ExceptionRequest req)
+    {
+        var slot = await MySlots.Include(s => s.Subject.Faculty).FirstOrDefaultAsync(s => s.Id == slotId);
+        if (slot == null) return NotFound();
+        if (!slot.Subject.Faculty.Occurs(slot, date))
+        {
+            ModelState.AddModelError("date", "The slot has no class on this date");
+            return ValidationProblem();
+        }
+
+        var exception = await db.SlotExceptions.FirstOrDefaultAsync(e => e.SlotId == slotId && e.OriginalDate == date);
+        if (exception == null) db.SlotExceptions.Add(exception = new SlotException {SlotId = slotId, OriginalDate = date});
+        req.ApplyTo(exception);
+        await db.SaveChangesAsync();
+        return Ok(exception);
+    }
+
+    /// <summary>Undo: the occurrence goes back to its weekly time.</summary>
+    [HttpDelete("slots/{slotId:int}/exceptions/{date}")]
+    public async Task<IActionResult> DeleteException(int slotId, DateOnly date) =>
+        await db.SlotExceptions
+            .Where(e => e.SlotId == slotId && e.OriginalDate == date && e.Slot.Subject.Faculty.OwnerId == UserId)
+            .ExecuteDeleteAsync() == 0 ? NotFound() : NoContent();
+}
+
+public sealed class ExceptionRequest : IValidatableObject
+{
+    [Required, RegularExpression("^(cancelled|moved)$")] public string Kind { get; set; } = "";
+    public DateTime? NewStart { get; set; }
+    public DateTime? NewEnd { get; set; }
+    [StringLength(200)] public string? NewRoom { get; set; }
+
+    public IEnumerable<ValidationResult> Validate(ValidationContext _)
+    {
+        if (Kind != SlotException.Moved) yield break;
+        if (NewStart == null) yield return new ValidationResult("A move needs a new start", [nameof(NewStart)]);
+        if (NewEnd == null) yield return new ValidationResult("A move needs a new end", [nameof(NewEnd)]);
+        else if (NewEnd <= NewStart) yield return new ValidationResult("New end must be after new start", [nameof(NewEnd)]);
+    }
+
+    public void ApplyTo(SlotException e)
+    {
+        var moved = Kind == SlotException.Moved;
+        e.Kind = Kind;
+        // Wall-clock time: Npgsql only writes Unspecified kinds to "timestamp without time zone".
+        e.NewStart = moved ? DateTime.SpecifyKind(NewStart!.Value, DateTimeKind.Unspecified) : null;
+        e.NewEnd = moved ? DateTime.SpecifyKind(NewEnd!.Value, DateTimeKind.Unspecified) : null;
+        e.NewRoom = moved && !string.IsNullOrWhiteSpace(NewRoom) ? NewRoom.Trim() : null;
+    }
 }
 
 public sealed class FacultyRequest : IValidatableObject

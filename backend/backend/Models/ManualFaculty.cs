@@ -13,6 +13,11 @@ public class ManualFaculty
     public DateOnly TermEnd { get; set; }
     public List<DateOnly> SkippedDates { get; set; } = new();
     public List<ManualSubject> Subjects { get; set; } = new();
+
+    /// <summary>Whether the slot has a class on this date: its weekday, inside the term, not skipped.</summary>
+    public bool Occurs(ManualSlot slot, DateOnly date) =>
+        date >= TermStart && date <= TermEnd && !SkippedDates.Contains(date) &&
+        slot.DayOfWeek == (date.DayOfWeek == System.DayOfWeek.Sunday ? 7 : (int)date.DayOfWeek);
 }
 
 public class ManualSubject
@@ -41,4 +46,24 @@ public class ManualSlot
     public TimeOnly EndTime { get; set; }
     public string? Room { get; set; }
     public string? Lecturer { get; set; }
+    [JsonIgnore] public List<SlotException> Exceptions { get; set; } = new();
+}
+
+/// <summary>One occurrence of a slot cancelled or moved, without touching the weekly pattern.</summary>
+[Microsoft.EntityFrameworkCore.Index(nameof(SlotId), nameof(OriginalDate), IsUnique = true)]
+public class SlotException
+{
+    public const string Cancelled = "cancelled";
+    public const string Moved = "moved";
+
+    public int Id { get; set; }
+    public int SlotId { get; set; }
+    [JsonIgnore] public ManualSlot Slot { get; set; } = null!;
+    public DateOnly OriginalDate { get; set; }
+    /// <summary><see cref="Cancelled"/> or <see cref="Moved"/>.</summary>
+    public string Kind { get; set; } = null!;
+    // Ljubljana wall-clock, like slot times.
+    [System.ComponentModel.DataAnnotations.Schema.Column(TypeName = "timestamp without time zone")] public DateTime? NewStart { get; set; }
+    [System.ComponentModel.DataAnnotations.Schema.Column(TypeName = "timestamp without time zone")] public DateTime? NewEnd { get; set; }
+    public string? NewRoom { get; set; }
 }

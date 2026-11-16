@@ -332,6 +332,41 @@ namespace backend.Migrations
                     b.ToTable("ManualSubjects");
                 });
 
+            modelBuilder.Entity("backend.Models.SlotException", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("NewEnd")
+                        .HasColumnType("timestamp without time zone");
+
+                    b.Property<string>("NewRoom")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("NewStart")
+                        .HasColumnType("timestamp without time zone");
+
+                    b.Property<DateOnly>("OriginalDate")
+                        .HasColumnType("date");
+
+                    b.Property<int>("SlotId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SlotId", "OriginalDate")
+                        .IsUnique();
+
+                    b.ToTable("SlotExceptions");
+                });
+
             modelBuilder.Entity("backend.Models.UserEvent", b =>
                 {
                     b.Property<int>("Id")
@@ -452,6 +487,17 @@ namespace backend.Migrations
                     b.Navigation("Faculty");
                 });
 
+            modelBuilder.Entity("backend.Models.SlotException", b =>
+                {
+                    b.HasOne("backend.Models.ManualSlot", "Slot")
+                        .WithMany("Exceptions")
+                        .HasForeignKey("SlotId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Slot");
+                });
+
             modelBuilder.Entity("backend.Models.UserEvent", b =>
                 {
                     b.HasOne("backend.Models.AppUser", "User")
@@ -471,6 +517,11 @@ namespace backend.Migrations
             modelBuilder.Entity("backend.Models.ManualFaculty", b =>
                 {
                     b.Navigation("Subjects");
+                });
+
+            modelBuilder.Entity("backend.Models.ManualSlot", b =>
+                {
+                    b.Navigation("Exceptions");
                 });
 
             modelBuilder.Entity("backend.Models.ManualSubject", b =>

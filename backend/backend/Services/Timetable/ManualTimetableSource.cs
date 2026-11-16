@@ -12,8 +12,9 @@ public sealed class ManualTimetableSource(AppDbContext db) : ITimetableSource
         if (query.UserId == null) return [];
 
         var faculties = await db.ManualFaculties.AsNoTracking()
-            .Where(f => f.OwnerId == query.UserId && f.TermStart <= query.To && f.TermEnd >= query.From)
-            .Include(f => f.Subjects).ThenInclude(s => s.Slots)
+            // No term filter: an occurrence may be moved into the range from outside the term.
+            .Where(f => f.OwnerId == query.UserId)
+            .Include(f => f.Subjects).ThenInclude(s => s.Slots).ThenInclude(s => s.Exceptions)
             .ToListAsync(ct);
 
         return faculties.SelectMany(f => Expand(f, query.From, query.To)).ToList();
@@ -32,23 +33,42 @@ public sealed class ManualTimetableSource(AppDbContext db) : ITimetableSource
 
             foreach (var subject in faculty.Subjects)
             foreach (var slot in subject.Slots.Where(s => s.DayOfWeek == isoDay))
-                yield return new TimetableSession(
-                    Id: $"manual:{slot.Id}:{date:yyyy-MM-dd}",
-                    Source: source,
-                    SubjectKey: $"manual:{subject.Id}",
-                    Subject: subject.Name,
-                    Code: null,
-                    Type: slot.Type,
-                    Room: slot.Room ?? "",
-                    Lecturers: slot.Lecturer == null ? [] : [slot.Lecturer],
-                    Groups: slot.Group == null ? [] : [slot.Group],
-                    StartAt: WallTime(date, slot.StartTime),
-                    FinishAt: WallTime(date, slot.EndTime),
-                    Status: TimetableSession.Scheduled,
-                    SlotId: slot.Id,
-                    OccurrenceDate: date);
+            {
+                var exception = slot.Exceptions.FirstOrDefault(e => e.OriginalDate == date);
+                if (exception?.Kind == SlotException.Moved) continue; // shown at its new time below
+                yield return Session(source, subject, slot, date, date.ToDateTime(slot.StartTime), date.ToDateTime(slot.EndTime),
+                    slot.Room, exception == null ? TimetableSession.Scheduled : TimetableSession.Cancelled);
+            }
+        }
+
+        foreach (var subject in faculty.Subjects)
+        foreach (var slot in subject.Slots)
+        foreach (var move in slot.Exceptions.Where(e => e.Kind == SlotException.Moved))
+        {
+            var day = DateOnly.FromDateTime(move.NewStart!.Value);
+            if (day >= from && day <= to)
+                yield return Session(source, subject, slot, move.OriginalDate, move.NewStart.Value, move.NewEnd!.Value,
+                    move.NewRoom ?? slot.Room, TimetableSession.Moved);
         }
     }
 
-    private static string WallTime(DateOnly date, TimeOnly time) => date.ToDateTime(time).ToString("yyyy-MM-ddTHH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
+    private static TimetableSession Session(SessionSource source, ManualSubject subject, ManualSlot slot, DateOnly date,
+        DateTime start, DateTime finish, string? room, string status) =>
+        new(
+            Id: $"manual:{slot.Id}:{date:yyyy-MM-dd}",
+            Source: source,
+            SubjectKey: $"manual:{subject.Id}",
+            Subject: subject.Name,
+            Code: null,
+            Type: slot.Type,
+            Room: room ?? "",
+            Lecturers: slot.Lecturer == null ? [] : [slot.Lecturer],
+            Groups: slot.Group == null ? [] : [slot.Group],
+            StartAt: WallTime(start),
+            FinishAt: WallTime(finish),
+            Status: status,
+            SlotId: slot.Id,
+            OccurrenceDate: date);
+
+    private static string WallTime(DateTime time) => time.ToString("yyyy-MM-ddTHH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
 }
