@@ -3,6 +3,7 @@ import {TimetableHeader} from './TimetableHeader.tsx';
 import {TimeAxis} from './TimeAxis.tsx';
 import {WeekGrid} from './WeekGrid';
 import {ScheduleBuilderModal} from './ScheduleBuilderModal';
+import {ManualFacultyEditor} from './ManualFacultyEditor';
 import type {TimetableEvent} from '@/types/TimetableEvent.ts';
 import {ScheduleColumn} from './ScheduleColumn.tsx';
 import {TimetableEventBlockDetails} from './TimetableEventBlockDetailModal.tsx';
@@ -52,12 +53,18 @@ export function Timetable({headerTitle}: {headerTitle?: string}) {
     loading,
     error,
     publishedAt,
+    manualChanged,
     hasSelections,
   } = useWiseSchedule({selectedView, selectedDay, selectedWeek, academicYear});
 
   const {isAuthenticated, login} = useAuth();
 
   const [showFilterModal, setShowFilterModal] = useState(false);
+  const [showManualEditor, setShowManualEditor] = useState(false);
+  const openManualEditor = () => {
+    setShowFilterModal(false);
+    setShowManualEditor(true);
+  };
 
   const [isDark, setIsDark] = useLocalStorageState<boolean>('themeV2', false, {
     legacyKeys: ['themeV1'],
@@ -211,7 +218,16 @@ export function Timetable({headerTitle}: {headerTitle?: string}) {
         onRemove={removeSelection}
         onUpdatePicks={updatePicks}
         onClose={() => setShowFilterModal(false)}
+        onManageManual={isAuthenticated ? openManualEditor : undefined}
       />
+
+      {isAuthenticated && (
+        <ManualFacultyEditor
+          open={showManualEditor}
+          onClose={() => setShowManualEditor(false)}
+          onChanged={manualChanged}
+        />
+      )}
 
       {!hasSelections ? (
         <div className="mt-8 flex flex-col items-center gap-3 text-center text-muted-foreground">
@@ -245,6 +261,13 @@ export function Timetable({headerTitle}: {headerTitle?: string}) {
             onClick={() => setShowFilterModal(true)}>
             Dodaj predmet
           </button>
+          {isAuthenticated && (
+            <button
+              className='text-sm text-muted-foreground underline decoration-border underline-offset-4 hover:text-foreground'
+              onClick={openManualEditor}>
+              Fakulteta brez Wise? Vpiši njen urnik
+            </button>
+          )}
         </div>
       ) : (
         <>

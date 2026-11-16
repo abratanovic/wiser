@@ -263,26 +263,35 @@ export function useWiseSchedule({
   // Whether the account has any manual faculty. A signed-in student with no Wise picks still
   // has a timetable when they do, so this decides both fetching and the empty state. Null while
   // the answer is on its way, so the builder does not pop open over a timetable about to arrive.
-  const [hasManual, setHasManual] = useState<boolean | null>(null);
+  // Keyed by the token it was answered for, so the render right after sign-in reads null rather
+  // than the signed-out `false` — which used to pop the builder open over a manual timetable.
+  const [manual, setManual] = useState<{token: string; has: boolean} | null>(null);
+  const hasManual = !isAuthenticated || !token ? false : manual?.token === token ? manual.has : null;
   useEffect(() => {
-    if (!isAuthenticated || !token) {
-      setHasManual(false);
-      return;
-    }
-    setHasManual(null);
+    if (!isAuthenticated || !token) return;
     let cancelled = false;
     getManualFaculties(token)
       .then((list) => {
-        if (!cancelled) setHasManual(list.length > 0);
+        if (!cancelled) setManual({token, has: list.length > 0});
       })
       .catch(() => {
         // Wise still works; manual classes simply stay hidden until the next load.
-        if (!cancelled) setHasManual(false);
+        if (!cancelled) setManual({token, has: false});
       });
     return () => {
       cancelled = true;
     };
   }, [isAuthenticated, token]);
+
+  // Bumped after the manual-faculty editor saves, so the grid refetches without a reload.
+  const [manualVersion, setManualVersion] = useState(0);
+  const manualChanged = useCallback(
+    (hasAny: boolean) => {
+      if (token) setManual({token, has: hasAny});
+      setManualVersion((v) => v + 1);
+    },
+    [token],
+  );
 
   const range = useMemo(() => {
     if (selectedView === 'day' && selectedDay) return {from: selectedDay, to: selectedDay};
@@ -328,7 +337,7 @@ export function useWiseSchedule({
     return () => controller.abort();
     // selectionKey stands in for `selections` so re-ordering alone does not refetch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [range.from, range.to, selectionKey, hasManual, token]);
+  }, [range.from, range.to, selectionKey, hasManual, token, manualVersion]);
 
   // When the school last published. Wise sends no ETag on /web/, so this footer stamp is the
   // only honest "last updated" we can show.
@@ -356,6 +365,8 @@ export function useWiseSchedule({
     loading,
     error,
     publishedAt,
+    /** Call after editing manual faculties with whether any remain; refetches the timetable. */
+    manualChanged,
     hasSelections: selections.length > 0 || hasManual !== false,
   };
 }

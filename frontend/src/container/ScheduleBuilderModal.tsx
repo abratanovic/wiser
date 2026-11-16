@@ -18,7 +18,7 @@ import {
   type WiseSubject,
   type WiseSubjectShape,
 } from '@/lib/wiseApi';
-import {ArrowLeft, Check, Loader2, Plus, Search, Trash2} from 'lucide-react';
+import {ArrowLeft, Building2, Check, Loader2, Plus, Search, Trash2} from 'lucide-react';
 
 type Props = {
   open: boolean;
@@ -27,6 +27,8 @@ type Props = {
   onRemove: (subjectId: number) => void;
   onUpdatePicks: (subjectId: number, picks: Record<string, string>) => void;
   onClose: () => void;
+  /** Opens the manual-faculty editor; omitted when signed out, which hides the entry. */
+  onManageManual?: () => void;
 };
 
 type Step = 'list' | 'subject' | 'groups';
@@ -42,6 +44,7 @@ export function ScheduleBuilderModal({
   onRemove,
   onUpdatePicks,
   onClose,
+  onManageManual,
 }: Props) {
   const [step, setStep] = useState<Step>('list');
 
@@ -213,9 +216,16 @@ export function ScheduleBuilderModal({
             </button>
           </>
         ) : (
-          <button className={btnGhost} onClick={onClose}>
-            Zapri
-          </button>
+          <>
+            {onManageManual && (
+              <button className={`${btnGhost} mr-auto`} onClick={onManageManual}>
+                <Building2 size={15} /> Fakultete brez Wise
+              </button>
+            )}
+            <button className={btnGhost} onClick={onClose}>
+              Zapri
+            </button>
+          </>
         )
       }>
       {error && (
