@@ -1,0 +1,62 @@
+# Coolify deployment. Same stack as docker-compose.yml, but with no host ports or container
+# names: Coolify's proxy routes the domain to the frontend, and fixed names would collide
+# with other apps on the server. Secrets come from the application's env vars in Coolify.
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: ''
+    expose:
+      - '80'
+    restart: always
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  backend:
+    build: ./backend
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      POSTGRES_HOST: database
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-wiser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_DB: ${POSTGRES_DB:-wiser}
+      LOG_FILE_DIRECTORY: /app/Data/Logs
+      Jwt__Secret: ${Jwt__Secret:?}
+      Jwt__Issuer: ${Jwt__Issuer:-wiser-api}
+      Jwt__Audience: ${Jwt__Audience:-wiser-app}
+      Google__ClientId: ${Google__ClientId:-}
+      Google__ClientSecret: ${Google__ClientSecret:-}
+      Frontend__Url: ${Frontend__Url:?}
+      WISE_SCHOOL: ${WISE_SCHOOL:-feri}
+      WISE_USER_AGENT: ${WISE_USER_AGENT:-wiser/1.0}
+    restart: always
+    depends_on:
+      database:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', "bash -c 'echo > /dev/tcp/127.0.0.1/5013'"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  database:
+    image: postgres:16
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-wiser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_DB: ${POSTGRES_DB:-wiser}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB || exit 1']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  postgres_data:
