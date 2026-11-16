@@ -22,6 +22,7 @@ import {useAuth} from '@/contexts/AuthContext.shared';
 import {TimetableControls} from './TimetableControls';
 import {CurrentTimeIndicator} from './CurrentTimeIndicator';
 import PageHeader from '@/components/PageHeader.tsx';
+import {sourcesOf} from '@/lib/sources';
 
 const HOUR_HEIGHT = 64;
 const DAY_START = 7;
@@ -49,7 +50,7 @@ export function Timetable({headerTitle}: {headerTitle?: string}) {
     addSelection,
     removeSelection,
     updatePicks,
-    events: filteredEvents,
+    events: loadedEvents,
     loading,
     error,
     publishedAt,
@@ -65,6 +66,20 @@ export function Timetable({headerTitle}: {headerTitle?: string}) {
     setShowFilterModal(false);
     setShowManualEditor(true);
   };
+
+  // Faculty toggles. Storing what is OFF means a newly added faculty shows up switched on, and
+  // a first visit shows everything. Filtering is local: the server already sent every source.
+  const [hiddenSources, setHiddenSources] = useLocalStorageState<string[]>('hiddenSourcesV1', []);
+  const sources = useMemo(() => sourcesOf(loadedEvents), [loadedEvents]);
+  const filteredEvents = useMemo(
+    () => loadedEvents.filter((ev) => !hiddenSources.includes(ev.source.key)),
+    [loadedEvents, hiddenSources],
+  );
+  const showSource = sources.length > 1;
+  const toggleSource = (key: string) =>
+    setHiddenSources((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
+    );
 
   const [isDark, setIsDark] = useLocalStorageState<boolean>('themeV2', false, {
     legacyKeys: ['themeV1'],
@@ -209,6 +224,9 @@ export function Timetable({headerTitle}: {headerTitle?: string}) {
         setIsDark={setIsDark}
         setShowFilterModal={setShowFilterModal}
         publishedAt={publishedAt}
+        sources={sources}
+        hiddenSources={hiddenSources}
+        onToggleSource={toggleSource}
       />
 
       <ScheduleBuilderModal
@@ -301,6 +319,7 @@ export function Timetable({headerTitle}: {headerTitle?: string}) {
                 hourHeight={HOUR_HEIGHT}
                 dayStart={DAY_START}
                 events={filteredDayEvents}
+                showSource={showSource}
                 onEventClick={(ev) => setSelectedEvent(ev)}
               />
               {selectedDay && isSameDay(selectedDay, new Date()) && (
@@ -316,6 +335,7 @@ export function Timetable({headerTitle}: {headerTitle?: string}) {
                 hourHeight={HOUR_HEIGHT}
                 dayStart={DAY_START}
                 events={filteredEvents}
+                showSource={showSource}
                 onEventClick={(ev) => setSelectedEvent(ev)}
               />
             </div>

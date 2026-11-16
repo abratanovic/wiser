@@ -76,6 +76,10 @@ function toEvent(s: TimetableSession): TimetableEvent {
     wiseType: s.type,
     lecturers: s.lecturers,
     groups: s.groups,
+    source: s.source,
+    status: s.status,
+    slotId: s.slotId,
+    occurrenceDate: s.occurrenceDate,
   };
 }
 

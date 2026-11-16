@@ -8,6 +8,7 @@ type Props = {
   hourHeight: number; // px per hour (e.g., 64)
   dayStart: number; // first hour shown on the timetable
   events: TimetableEvent[];
+  showSource?: boolean;
   onEventClick?: (ev: TimetableEvent) => void;
 };
 
@@ -16,6 +17,7 @@ export function ScheduleColumn({
   hourHeight,
   dayStart,
   events,
+  showSource,
   onEventClick,
 }: Props) {
   const columnHeight = (hours.length - 1) * hourHeight; // overall column height in px
@@ -122,6 +124,7 @@ export function ScheduleColumn({
             ev={ev}
             leftPct={leftPct}
             widthPct={widthPct}
+            showSource={showSource}
             key={ev.id}
             onClick={(e) => onEventClick?.(e)}
           />

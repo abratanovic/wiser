@@ -76,6 +76,7 @@ type Dict = {
     instructor: string;
     room: string;
     group: string;
+    faculty: string;
   };
   types: Record<TimetableEventType, string>;
   locale: string; // for Intl formatting
@@ -152,6 +153,7 @@ const dicts: Record<Locale, Dict> = {
       instructor: "Instructor",
       room: "Room",
       group: "Group",
+      faculty: "Faculty",
     },
     types: {
       Lecture: "Lecture",
@@ -237,6 +239,7 @@ const dicts: Record<Locale, Dict> = {
       instructor: "Predavatelj",
       room: "Prostor",
       group: "Skupina",
+      faculty: "Fakulteta",
     },
     types: {
       Lecture: "Predavanje",
