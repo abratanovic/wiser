@@ -1,12 +1,12 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {useLocalStorageState} from './useLocalStorageState';
 import {useAuth} from '@/contexts/AuthContext.shared';
-import {ApiError, getStoredSelections, saveStoredSelections} from '@/lib/api';
+import {ApiError, getManualFaculties, getStoredSelections, saveStoredSelections} from '@/lib/api';
 import {
   fetchPublishedAt,
-  fetchWiseTimetable,
+  fetchTimetable,
   type WiseSelection,
-  type WiseSession,
+  type TimetableSession,
 } from '@/lib/wiseApi';
 import type {TimetableEvent} from '@/types/TimetableEvent';
 import type {TimetableEventType} from '@/types/TimetableEventType';
@@ -22,6 +22,7 @@ const STORAGE_KEY = 'wiserSelectionsV1';
 function mapType(executionType: string): TimetableEventType {
   const t = executionType.toUpperCase().trim();
   if (t.startsWith('PR')) return 'Lecture';
+  if (t.startsWith('VJ')) return 'Exercise'; // manual faculties: vježbe
   if (t.startsWith('RV')) return 'ComputerExercise';
   if (t.startsWith('LV')) return 'LabExercise';
   if (t.startsWith('SV')) return 'SeminarExercise';
@@ -58,10 +59,10 @@ function parseLjubljana(raw: string): Date {
   return new Date(utcMs - minutes * 60_000);
 }
 
-function toEvent(s: WiseSession): TimetableEvent {
+function toEvent(s: TimetableSession): TimetableEvent {
   return {
     id: s.id,
-    classId: s.subjectId,
+    classId: s.subjectKey,
     className: s.subject,
     instructorId: 0,
     instructorName: s.lecturers.join(', '),
@@ -75,6 +76,10 @@ function toEvent(s: WiseSession): TimetableEvent {
     wiseType: s.type,
     lecturers: s.lecturers,
     groups: s.groups,
+    source: s.source,
+    status: s.status,
+    slotId: s.slotId,
+    occurrenceDate: s.occurrenceDate,
   };
 }
 
@@ -259,6 +264,39 @@ export function useWiseSchedule({
     [selections, persist],
   );
 
+  // Whether the account has any manual faculty. A signed-in student with no Wise picks still
+  // has a timetable when they do, so this decides both fetching and the empty state. Null while
+  // the answer is on its way, so the builder does not pop open over a timetable about to arrive.
+  // Keyed by the token it was answered for, so the render right after sign-in reads null rather
+  // than the signed-out `false` — which used to pop the builder open over a manual timetable.
+  const [manual, setManual] = useState<{token: string; has: boolean} | null>(null);
+  const hasManual = !isAuthenticated || !token ? false : manual?.token === token ? manual.has : null;
+  useEffect(() => {
+    if (!isAuthenticated || !token) return;
+    let cancelled = false;
+    getManualFaculties(token)
+      .then((list) => {
+        if (!cancelled) setManual({token, has: list.length > 0});
+      })
+      .catch(() => {
+        // Wise still works; manual classes simply stay hidden until the next load.
+        if (!cancelled) setManual({token, has: false});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, token]);
+
+  // Bumped after the manual-faculty editor saves, so the grid refetches without a reload.
+  const [manualVersion, setManualVersion] = useState(0);
+  const manualChanged = useCallback(
+    (hasAny: boolean) => {
+      if (token) setManual({token, has: hasAny});
+      setManualVersion((v) => v + 1);
+    },
+    [token],
+  );
+
   const range = useMemo(() => {
     if (selectedView === 'day' && selectedDay) return {from: selectedDay, to: selectedDay};
     const week = selectedWeek ?? getAcademicWeekNumber(new Date());
@@ -272,7 +310,7 @@ export function useWiseSchedule({
   );
 
   useEffect(() => {
-    if (selections.length === 0) {
+    if (selections.length === 0 && !hasManual) {
       setEvents([]);
       setError(null);
       return;
@@ -283,10 +321,11 @@ export function useWiseSchedule({
       setLoading(true);
       setError(null);
       try {
-        const sessions = await fetchWiseTimetable(
+        const sessions = await fetchTimetable(
           range.from,
           range.to,
           selections,
+          isAuthenticated ? token : null,
           controller.signal,
         );
         setEvents(sessions.map(toEvent));
@@ -302,7 +341,7 @@ export function useWiseSchedule({
     return () => controller.abort();
     // selectionKey stands in for `selections` so re-ordering alone does not refetch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [range.from, range.to, selectionKey]);
+  }, [range.from, range.to, selectionKey, hasManual, token, manualVersion]);
 
   // When the school last published. Wise sends no ETag on /web/, so this footer stamp is the
   // only honest "last updated" we can show.
@@ -330,6 +369,8 @@ export function useWiseSchedule({
     loading,
     error,
     publishedAt,
-    hasSelections: selections.length > 0,
+    /** Call after editing manual faculties with whether any remain; refetches the timetable. */
+    manualChanged,
+    hasSelections: selections.length > 0 || hasManual !== false,
   };
 }

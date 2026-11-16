@@ -3,6 +3,7 @@ import {TimetableHeader} from './TimetableHeader.tsx';
 import {TimeAxis} from './TimeAxis.tsx';
 import {WeekGrid} from './WeekGrid';
 import {ScheduleBuilderModal} from './ScheduleBuilderModal';
+import {ManualFacultyEditor, OccurrenceActions} from './ManualFacultyEditor';
 import type {TimetableEvent} from '@/types/TimetableEvent.ts';
 import {ScheduleColumn} from './ScheduleColumn.tsx';
 import {TimetableEventBlockDetails} from './TimetableEventBlockDetailModal.tsx';
@@ -21,6 +22,7 @@ import {useAuth} from '@/contexts/AuthContext.shared';
 import {TimetableControls} from './TimetableControls';
 import {CurrentTimeIndicator} from './CurrentTimeIndicator';
 import PageHeader from '@/components/PageHeader.tsx';
+import {sourcesOf} from '@/lib/sources';
 
 const HOUR_HEIGHT = 64;
 const DAY_START = 7;
@@ -48,16 +50,38 @@ export function Timetable({headerTitle}: {headerTitle?: string}) {
     addSelection,
     removeSelection,
     updatePicks,
-    events: filteredEvents,
+    events: loadedEvents,
     loading,
     error,
     publishedAt,
+    manualChanged,
     hasSelections,
   } = useWiseSchedule({selectedView, selectedDay, selectedWeek, academicYear});
 
   const {isAuthenticated, login} = useAuth();
 
   const [showFilterModal, setShowFilterModal] = useState(false);
+  const [showManualEditor, setShowManualEditor] = useState(false);
+  /** Set when the editor is opened from a class on the grid ("edit weekly slot"). */
+  const [focusSlotId, setFocusSlotId] = useState<number | null>(null);
+  const openManualEditor = () => {
+    setShowFilterModal(false);
+    setShowManualEditor(true);
+  };
+
+  // Faculty toggles. Storing what is OFF means a newly added faculty shows up switched on, and
+  // a first visit shows everything. Filtering is local: the server already sent every source.
+  const [hiddenSources, setHiddenSources] = useLocalStorageState<string[]>('hiddenSourcesV1', []);
+  const sources = useMemo(() => sourcesOf(loadedEvents), [loadedEvents]);
+  const filteredEvents = useMemo(
+    () => loadedEvents.filter((ev) => !hiddenSources.includes(ev.source.key)),
+    [loadedEvents, hiddenSources],
+  );
+  const showSource = sources.length > 1;
+  const toggleSource = (key: string) =>
+    setHiddenSources((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
+    );
 
   const [isDark, setIsDark] = useLocalStorageState<boolean>('themeV2', false, {
     legacyKeys: ['themeV1'],
@@ -202,6 +226,9 @@ export function Timetable({headerTitle}: {headerTitle?: string}) {
         setIsDark={setIsDark}
         setShowFilterModal={setShowFilterModal}
         publishedAt={publishedAt}
+        sources={sources}
+        hiddenSources={hiddenSources}
+        onToggleSource={toggleSource}
       />
 
       <ScheduleBuilderModal
@@ -211,7 +238,20 @@ export function Timetable({headerTitle}: {headerTitle?: string}) {
         onRemove={removeSelection}
         onUpdatePicks={updatePicks}
         onClose={() => setShowFilterModal(false)}
+        onManageManual={isAuthenticated ? openManualEditor : undefined}
       />
+
+      {isAuthenticated && (
+        <ManualFacultyEditor
+          open={showManualEditor}
+          onClose={() => {
+            setShowManualEditor(false);
+            setFocusSlotId(null);
+          }}
+          onChanged={manualChanged}
+          focusSlotId={focusSlotId}
+        />
+      )}
 
       {!hasSelections ? (
         <div className="mt-8 flex flex-col items-center gap-3 text-center text-muted-foreground">
@@ -245,6 +285,13 @@ export function Timetable({headerTitle}: {headerTitle?: string}) {
             onClick={() => setShowFilterModal(true)}>
             Dodaj predmet
           </button>
+          {isAuthenticated && (
+            <button
+              className='text-sm text-muted-foreground underline decoration-border underline-offset-4 hover:text-foreground'
+              onClick={openManualEditor}>
+              {t.manual.openEditor}
+            </button>
+          )}
         </div>
       ) : (
         <>
@@ -278,6 +325,7 @@ export function Timetable({headerTitle}: {headerTitle?: string}) {
                 hourHeight={HOUR_HEIGHT}
                 dayStart={DAY_START}
                 events={filteredDayEvents}
+                showSource={showSource}
                 onEventClick={(ev) => setSelectedEvent(ev)}
               />
               {selectedDay && isSameDay(selectedDay, new Date()) && (
@@ -293,6 +341,7 @@ export function Timetable({headerTitle}: {headerTitle?: string}) {
                 hourHeight={HOUR_HEIGHT}
                 dayStart={DAY_START}
                 events={filteredEvents}
+                showSource={showSource}
                 onEventClick={(ev) => setSelectedEvent(ev)}
               />
             </div>
@@ -301,8 +350,23 @@ export function Timetable({headerTitle}: {headerTitle?: string}) {
           <TimetableEventBlockDetails
             open={!!selectedEvent}
             event={selectedEvent ?? undefined}
-            onClose={() => setSelectedEvent(null)}
-          />
+            onClose={() => setSelectedEvent(null)}>
+            {isAuthenticated && selectedEvent?.slotId != null && selectedEvent.occurrenceDate && (
+              <OccurrenceActions
+                key={selectedEvent.id}
+                event={selectedEvent}
+                onChanged={() => {
+                  setSelectedEvent(null);
+                  manualChanged(true);
+                }}
+                onEditSlot={(slotId) => {
+                  setSelectedEvent(null);
+                  setFocusSlotId(slotId);
+                  openManualEditor();
+                }}
+              />
+            )}
+          </TimetableEventBlockDetails>
 
           <footer className="mt-10 border-t pt-5 text-center text-xs text-muted-foreground">
             <p className="mx-auto max-w-prose leading-relaxed">

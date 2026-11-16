@@ -18,29 +18,39 @@ export class ApiError extends Error {
   // Written out rather than declared as a constructor parameter property: the build runs with
   // `erasableSyntaxOnly`, which rejects the shorthand.
   readonly status: number;
+  /** ASP.NET validation errors by field, keys lower-cased ("termend"); empty otherwise. */
+  readonly fields: Record<string, string[]>;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, fields: Record<string, string[]> = {}) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
+    this.fields = fields;
   }
 }
 
 async function apiClient<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_HOST}${path}`, init);
   if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
+    const data = (await res.json().catch(() => ({}))) as {
+      message?: string;
+      errors?: Record<string, string[]>;
+    };
+    // A 400 from model validation carries `errors` keyed by property ("TermEnd", "$.startTime").
+    const fields = Object.fromEntries(
+      Object.entries(data.errors ?? {}).map(([k, v]) => [k.replace(/^\$\./, '').toLowerCase(), v]),
+    );
     throw new ApiError(
       res.status,
-      ((data as Record<string, unknown>).message as string) ||
-        `Request failed: ${res.status}`,
+      data.message || Object.values(fields)[0]?.[0] || `Request failed: ${res.status}`,
+      fields,
     );
   }
   if (res.status === 204) return undefined as T;
   return res.json();
 }
 
-function authHeaders(token: string, json = false): HeadersInit {
+export function authHeaders(token: string, json = false): HeadersInit {
   return json
     ? {'Content-Type': 'application/json', Authorization: `Bearer ${token}`}
     : {Authorization: `Bearer ${token}`};
@@ -110,3 +120,82 @@ export function approveCliLogin(token: string, userCode: string): Promise<void> 
     body: JSON.stringify({userCode}),
   });
 }
+
+// ── Manual faculties ────────────────────────────────────────────────────────
+
+/** ISO day of week: 1 = Monday ... 7 = Sunday. Times are Ljubljana wall clock, "HH:mm:ss". */
+export type ManualSlot = {
+  id: number;
+  subjectId: number;
+  type: string;
+  group: string | null;
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
+  room: string | null;
+  lecturer: string | null;
+};
+
+export type ManualSubject = {
+  id: number;
+  facultyId: number;
+  name: string;
+  pickedGroup: string | null;
+  slots: ManualSlot[];
+};
+
+export type ManualFaculty = {
+  id: number;
+  name: string;
+  termStart: string; // YYYY-MM-DD
+  termEnd: string;
+  skippedDates: string[];
+  subjects: ManualSubject[];
+};
+
+export function getManualFaculties(token: string): Promise<ManualFaculty[]> {
+  return apiClient('/api/manual-faculties', {headers: authHeaders(token)});
+}
+
+export type FacultyInput = Pick<ManualFaculty, 'name' | 'termStart' | 'termEnd' | 'skippedDates'>;
+/** Times as "HH:mm"; empty group/room/lecturer are stored as null. */
+export type SlotInput = Omit<ManualSlot, 'id' | 'subjectId'>;
+
+const send = <T,>(token: string, method: string, path: string, body?: unknown): Promise<T> =>
+  apiClient(`/api/manual-faculties${path}`, {
+    method,
+    headers: authHeaders(token, body !== undefined),
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+
+export const createManualFaculty = (token: string, f: FacultyInput) =>
+  send<ManualFaculty>(token, 'POST', '', f);
+export const updateManualFaculty = (token: string, id: number, f: FacultyInput) =>
+  send<ManualFaculty>(token, 'PUT', `/${id}`, f);
+export const deleteManualFaculty = (token: string, id: number) =>
+  send<void>(token, 'DELETE', `/${id}`);
+
+export const createManualSubject = (token: string, facultyId: number, name: string) =>
+  send<ManualSubject>(token, 'POST', `/${facultyId}/subjects`, {name});
+/** Full replace: always send the current pickedGroup, or a rename clears the pick. */
+export const updateManualSubject = (token: string, id: number, name: string, pickedGroup: string | null) =>
+  send<ManualSubject>(token, 'PUT', `/subjects/${id}`, {name, pickedGroup});
+export const deleteManualSubject = (token: string, id: number) =>
+  send<void>(token, 'DELETE', `/subjects/${id}`);
+
+export const createManualSlot = (token: string, subjectId: number, slot: SlotInput) =>
+  send<ManualSlot>(token, 'POST', `/subjects/${subjectId}/slots`, slot);
+export const updateManualSlot = (token: string, id: number, slot: SlotInput) =>
+  send<ManualSlot>(token, 'PUT', `/slots/${id}`, slot);
+export const deleteManualSlot = (token: string, id: number) =>
+  send<void>(token, 'DELETE', `/slots/${id}`);
+
+/** One occurrence cancelled, or moved to a new Ljubljana wall time ("2026-11-18T14:00:00"). */
+export type SlotExceptionInput =
+  | {kind: 'cancelled'}
+  | {kind: 'moved'; newStart: string; newEnd: string; newRoom?: string | null};
+
+export const putSlotException = (token: string, slotId: number, date: string, body: SlotExceptionInput) =>
+  send<unknown>(token, 'PUT', `/slots/${slotId}/exceptions/${date}`, body);
+export const deleteSlotException = (token: string, slotId: number, date: string) =>
+  send<void>(token, 'DELETE', `/slots/${slotId}/exceptions/${date}`);

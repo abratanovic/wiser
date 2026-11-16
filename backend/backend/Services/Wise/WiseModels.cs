@@ -53,22 +53,3 @@ public sealed class WiseSelection
     public int SubjectId { get; set; }
     public Dictionary<string, string> Picks { get; set; } = new();
 }
-
-public sealed class WiseTimetableRequest
-{
-    public DateOnly From { get; set; }
-    public DateOnly To { get; set; }
-    public List<WiseSelection> Selections { get; set; } = new();
-}
-
-public sealed record WiseSessionDto(
-    string Id,
-    int SubjectId,
-    string Subject,
-    string? Code,
-    string Type,
-    string Room,
-    IReadOnlyList<string> Lecturers,
-    IReadOnlyList<string> Groups,
-    string StartAt,
-    string FinishAt);

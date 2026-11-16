@@ -59,21 +59,6 @@ public class WiseController : ControllerBase
     public async Task<IActionResult> GetSubjectShape(int subjectId, CancellationToken ct)
         => Ok(await _wise.GetSubjectShapeAsync(subjectId, ct));
 
-    /// <summary>The student's own timetable: their selections, each narrowed to the chosen variant.</summary>
-    [HttpPost("timetable")]
-    public async Task<IActionResult> GetTimetable([FromBody] WiseTimetableRequest request, CancellationToken ct)
-    {
-        if (request.Selections.Count == 0) return Ok(Array.Empty<WiseSessionDto>());
-
-        if (request.To < request.From)
-            return BadRequest(new {message = "'to' falls before 'from'"});
-
-        if (request.To.DayNumber - request.From.DayNumber > 400)
-            return BadRequest(new {message = "Range is longer than 400 days"});
-
-        return Ok(await _wise.GetTimetableAsync(request, ct));
-    }
-
     /// <summary>When the school last published. Use it to decide whether a refresh is worth it.</summary>
     [HttpGet("published")]
     public async Task<IActionResult> GetPublished(CancellationToken ct)

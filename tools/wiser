@@ -131,7 +131,7 @@ def main(argv):
     sel = selections(tok)
     if sel:
         body = {"from": start.isoformat(), "to": end.isoformat(), "selections": sel}
-        for s in call("/api/wise/timetable", tok, body):
+        for s in call("/api/timetable", tok, body):
             # Wise sends Ljubljana wall time with no offset.
             a = datetime.fromisoformat(s["startAt"]).replace(tzinfo=TZ)
             b = datetime.fromisoformat(s["finishAt"]).replace(tzinfo=TZ)

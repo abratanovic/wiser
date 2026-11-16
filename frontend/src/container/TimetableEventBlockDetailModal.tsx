@@ -1,19 +1,23 @@
 import { Modal } from "@/components/Modal";
 import { ljTimeFmt } from "@/Helpers/DateHelpers";
 import type { TimetableEvent } from "@/types/TimetableEvent";
-import { Clock, GraduationCap, MapPin, Users, Tags } from "lucide-react";
+import { Clock, GraduationCap, MapPin, Users, Tags, School } from "lucide-react";
+import { sourceDot, sourceLabel } from "@/lib/sources";
 import { useI18n } from "@/lib/i18n";
 
 export type TimetableEventBlockDetailsProps = {
   open: boolean;
   event?: TimetableEvent;
   onClose: () => void;
+  /** Shown under the details, e.g. the occurrence actions of a manual class. */
+  children?: React.ReactNode;
 };
 
 export function TimetableEventBlockDetails({
   open,
   event,
   onClose,
+  children,
 }: TimetableEventBlockDetailsProps) {
   const { t } = useI18n();
   return (
@@ -42,6 +46,22 @@ export function TimetableEventBlockDetails({
               <div className="sm:ml-2 min-w-0">
                 <span className="inline-flex items-center rounded-md bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 text-xs px-2 py-0.5 font-medium">
                   {t.types[event.type]}
+                </span>
+              </div>
+            </div>
+
+            {/* Faculty */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:h-9 gap-1 sm:gap-0">
+              <div className="flex items-center gap-2 text-muted-foreground sm:w-36 w-full">
+                <School size={16} />
+                <span className="text-sm text-muted-foreground">
+                  {t.details.faculty}
+                </span>
+              </div>
+              <div className="sm:ml-2 flex items-center gap-2 text-foreground min-w-0">
+                <span aria-hidden className={`size-2 rounded-full flex-shrink-0 ${sourceDot(event.source)}`} />
+                <span className="truncate" title={event.source.name}>
+                  {event.source.kind === "wise" ? sourceLabel(event.source) : event.source.name}
                 </span>
               </div>
             </div>
@@ -107,6 +127,7 @@ export function TimetableEventBlockDetails({
               </div>
             </div>
           </div>
+          {children}
         </div>
       )}
     </Modal>

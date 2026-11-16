@@ -171,6 +171,8 @@ builder.Services.AddHttpClient<backend.Services.Wise.WiseClient>(client =>
     {
         AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate | DecompressionMethods.Brotli
     });
+builder.Services.AddScoped<backend.Services.Timetable.ITimetableSource, backend.Services.Timetable.WiseTimetableSource>();
+builder.Services.AddScoped<backend.Services.Timetable.ITimetableSource, backend.Services.Timetable.ManualTimetableSource>();
 
 // Controllers + JSON enum as string
 builder.Services.AddControllers()
@@ -304,3 +306,6 @@ static string ResolveConnectionString(IConfiguration configuration)
         "No database configuration found. Copy .env.example to .env at the repository root and " +
         "fill in POSTGRES_USER, POSTGRES_PASSWORD and POSTGRES_DB, or set DB_CONNECTION_STRING.");
 }
+
+// Lets the test project boot the app with WebApplicationFactory<Program>.
+public partial class Program;

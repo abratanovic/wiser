@@ -12,6 +12,8 @@ type Props = {
   hourHeight: number;
   dayStart: number;
   events: TimetableEvent[];
+  /** Tag each class with its faculty; off when only one faculty is on the timetable. */
+  showSource?: boolean;
   onEventClick?: (ev: TimetableEvent) => void;
 };
 
@@ -24,6 +26,7 @@ export function WeekGrid({
   hourHeight,
   dayStart,
   events,
+  showSource,
   onEventClick,
 }: Props) {
   const {t} = useI18n();
@@ -88,6 +91,7 @@ export function WeekGrid({
                     hourHeight={hourHeight}
                     dayStart={dayStart}
                     events={events.filter((ev) => isSameDay(ev.startAt, d))}
+                    showSource={showSource}
                     onEventClick={onEventClick}
                   />
                 </div>
