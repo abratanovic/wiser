@@ -55,6 +55,10 @@ export function ManualFacultyEditor({open, onClose, onChanged, focusSlotId}: Pro
   const [editingSlot, setEditingSlot] = useState<number | 'new' | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  // Read strings through a ref so switching language doesn't reload the list and close an open form.
+  const mRef = useRef(m);
+  mRef.current = m;
+
   useEffect(() => {
     if (!open || !token) return;
     let cancelled = false;
@@ -69,11 +73,11 @@ export function ManualFacultyEditor({open, onClose, onChanged, focusSlotId}: Pro
         setSelected((cur) => owner?.id ?? (list.some((f) => f.id === cur) ? cur : list[0]?.id ?? 'new'));
         setEditingSlot(owner ? focusSlotId! : null);
       })
-      .catch((e) => !cancelled && setLoadError(messageOf(e, m)));
+      .catch((e) => !cancelled && setLoadError(messageOf(e, mRef.current)));
     return () => {
       cancelled = true;
     };
-  }, [open, token, focusSlotId, m]);
+  }, [open, token, focusSlotId]);
 
   const commit: Commit = useCallback(
     async (call) => {
