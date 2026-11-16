@@ -15,9 +15,23 @@ public class TokenService
         _config = config;
     }
 
-    public string CreateToken(AppUser user)
+    public string CreateToken(AppUser user) => Create(user, DateTime.UtcNow.AddDays(30));
+
+    /// <summary>
+    /// Long-lived token for the command-line tool, so an agent on the owner's machine does not
+    /// need a fresh browser sign-in every month. It carries the account's security stamp, and the
+    /// bearer handler refuses it once the stamp changes — that is how it gets revoked.
+    /// </summary>
+    public string CreateCliToken(AppUser user) => Create(user, DateTime.UtcNow.AddYears(10),
+        new Claim(CliClaim, "1"),
+        new Claim(StampClaim, user.SecurityStamp ?? ""));
+
+    public const string CliClaim = "cli";
+    public const string StampClaim = "stamp";
+
+    private string Create(AppUser user, DateTime expires, params Claim[] extra)
     {
-        var claims = new List<Claim>
+        var claims = new List<Claim>(extra)
         {
             new Claim(ClaimTypes.NameIdentifier, user.Id),
             new Claim(ClaimTypes.Email, user.Email!),
@@ -34,7 +48,7 @@ public class TokenService
             issuer: _config["Jwt:Issuer"],
             audience: _config["Jwt:Audience"],
             claims: claims,
-            expires: DateTime.UtcNow.AddDays(30),
+            expires: expires,
             signingCredentials: creds);
 
         return new JwtSecurityTokenHandler().WriteToken(token);

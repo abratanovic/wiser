@@ -29,8 +29,19 @@ export function AuthCallback() {
       }
     }
 
+    // A page that sent the visitor to sign in (the CLI approval) asks to be returned to.
+    let returnTo = '/';
+    try {
+      const saved = sessionStorage.getItem('returnTo');
+      sessionStorage.removeItem('returnTo');
+      // Same-origin paths only, so this cannot become an open redirect.
+      if (saved?.startsWith('/') && !saved.startsWith('//')) returnTo = saved;
+    } catch {
+      /* storage unavailable */
+    }
+
     // Hard reload, so the auth context re-reads the token it was just handed.
-    window.location.href = '/';
+    window.location.href = returnTo;
   }, [searchParams, error]);
 
   if (error) {

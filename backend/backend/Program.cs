@@ -57,6 +57,22 @@ builder.Services.AddAuthentication(options =>
         ValidAudience = builder.Configuration["Jwt:Audience"],
         ValidateLifetime = true,
     };
+
+    // CLI tokens live for years, so each use checks they have not been revoked: revoking
+    // rotates the account's security stamp, and a token minted under the old stamp stops working.
+    options.Events = new JwtBearerEvents
+    {
+        OnTokenValidated = async context =>
+        {
+            var principal = context.Principal!;
+            if (principal.FindFirstValue(TokenService.CliClaim) == null) return;
+
+            var users = context.HttpContext.RequestServices.GetRequiredService<UserManager<AppUser>>();
+            var user = await users.FindByIdAsync(principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? "");
+            if (user == null || (user.SecurityStamp ?? "") != principal.FindFirstValue(TokenService.StampClaim))
+                context.Fail("CLI token revoked");
+        },
+    };
 })
 ;
 

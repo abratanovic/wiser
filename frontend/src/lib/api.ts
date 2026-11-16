@@ -101,3 +101,12 @@ export function saveStoredSelections(
     body: JSON.stringify({groupFilters: JSON.stringify(payload)}),
   });
 }
+
+/** Approves a `wiser login` device code, signing that terminal in as this account. */
+export function approveCliLogin(token: string, userCode: string): Promise<void> {
+  return apiClient('/auth/cli/approve', {
+    method: 'POST',
+    headers: authHeaders(token, true),
+    body: JSON.stringify({userCode}),
+  });
+}

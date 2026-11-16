@@ -6,6 +6,7 @@ import {I18nProvider} from '@/lib/i18n';
 import {Toaster} from 'sonner';
 import {AuthProvider} from './contexts/AuthContext.tsx';
 import {AuthCallback} from './pages/AuthCallback.tsx';
+import {CliApprove} from './pages/CliApprove.tsx';
 
 createRoot(document.getElementById('root')!).render(
   <I18nProvider>
@@ -19,6 +20,10 @@ createRoot(document.getElementById('root')!).render(
           <Route
             path='/login/callback'
             element={<AuthCallback />}
+          />
+          <Route
+            path='/cli'
+            element={<CliApprove />}
           />
         </Routes>
       </BrowserRouter>

@@ -1,0 +1,161 @@
+#!/usr/bin/env python3
+"""Print your UrnikWiser schedule as plain text, one event per line. Made for AI agents.
+
+  wiser                  today
+  wiser tomorrow
+  wiser 2026-11-20       one day
+  wiser week [DATE]      Monday-Sunday of the week containing DATE (default: this week)
+  wiser login            authorize this machine: open the printed link and approve
+  wiser logout           revoke every CLI token on the account and delete the local one
+
+Token: $WISER_TOKEN or ~/.config/wiser/token, written by `wiser login`; it lasts until revoked.
+API: $WISER_API, default https://urnik.online.
+"""
+import json
+import os
+import sys
+import time
+import urllib.error
+import urllib.request
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
+
+TZ = ZoneInfo("Europe/Ljubljana")
+API = os.environ.get("WISER_API", "https://urnik.online").rstrip("/")
+TOKEN_FILE = os.path.expanduser("~/.config/wiser/token")
+
+
+def die(msg):
+    print(f"wiser: {msg}", file=sys.stderr)
+    sys.exit(1)
+
+
+def token():
+    t = os.environ.get("WISER_TOKEN")
+    if not t:
+        try:
+            with open(TOKEN_FILE) as f:
+                t = f.read()
+        except FileNotFoundError:
+            die("not signed in: run `wiser login`")
+    return t.strip().strip('"')
+
+
+def call(path, tok=None, body=None, ok_errors=()):
+    # Cloudflare in front of the site rejects Python's default User-Agent (error 1010).
+    headers = {"Content-Type": "application/json", "User-Agent": "wiser-cli/1.0"}
+    if tok:
+        headers["Authorization"] = f"Bearer {tok}"
+    req = urllib.request.Request(
+        API + path,
+        data=None if body is None else json.dumps(body).encode(),
+        headers=headers,
+        method="GET" if body is None else "POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            raw = r.read()
+            return json.loads(raw) if raw else None
+    except urllib.error.HTTPError as e:
+        if e.code in ok_errors:
+            return json.load(e)
+        if e.code == 401:
+            die("token rejected or revoked: run `wiser login`")
+        die(f"{path} -> HTTP {e.code}")
+    except urllib.error.URLError as e:
+        die(f"cannot reach {API}: {e.reason}")
+
+
+def login():
+    start = call("/auth/cli/start", body={})
+    print(f"Open this link and approve code {start['userCode']}:\n\n  {start['verificationUrl']}\n",
+          flush=True)
+    deadline = time.time() + start["expiresIn"]
+    while time.time() < deadline:
+        time.sleep(start["interval"])
+        r = call("/auth/cli/token", body={"deviceCode": start["deviceCode"]}, ok_errors=(400,))
+        if "token" in r:
+            os.makedirs(os.path.dirname(TOKEN_FILE), exist_ok=True)
+            # Created 0600 from the start, never briefly world-readable.
+            fd = os.open(TOKEN_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as f:
+                f.write(r["token"])
+            print(f"Signed in. Token saved to {TOKEN_FILE}")
+            return
+        if r.get("error") != "authorization_pending":
+            die(f"login failed: {r.get('error')}")
+    die("code expired before it was approved; run `wiser login` again")
+
+
+def logout():
+    call("/auth/cli/revoke", token(), body={})
+    os.remove(TOKEN_FILE) if os.path.exists(TOKEN_FILE) else None
+    print("All CLI tokens on this account are revoked.")
+
+
+def parse_range(args):
+    today = datetime.now(TZ).date()
+    if not args or args[0] == "today":
+        return today, today
+    if args[0] == "tomorrow":
+        d = today + timedelta(days=1)
+        return d, d
+    if args[0] == "week":
+        d = date.fromisoformat(args[1]) if len(args) > 1 else today
+        mon = d - timedelta(days=d.weekday())
+        return mon, mon + timedelta(days=6)
+    try:
+        d = date.fromisoformat(args[0])
+    except ValueError:
+        die(__doc__.strip())
+    return d, d
+
+
+def selections(tok):
+    raw = call("/user/filters", tok).get("groupFilters") or "{}"
+    stored = json.loads(raw)
+    # v2 is the only shape that holds Wise selections; anything older is a dead group filter.
+    return stored.get("selections", []) if stored.get("v") == 2 else []
+
+
+def main(argv):
+    if argv and argv[0] in ("-h", "--help"):
+        print(__doc__.strip())
+        return
+    if argv and argv[0] in ("login", "logout"):
+        return login() if argv[0] == "login" else logout()
+    start, end = parse_range(argv)
+    tok = token()
+
+    rows = []  # (start datetime, line)
+    sel = selections(tok)
+    if sel:
+        body = {"from": start.isoformat(), "to": end.isoformat(), "selections": sel}
+        for s in call("/api/wise/timetable", tok, body):
+            # Wise sends Ljubljana wall time with no offset.
+            a = datetime.fromisoformat(s["startAt"]).replace(tzinfo=TZ)
+            b = datetime.fromisoformat(s["finishAt"]).replace(tzinfo=TZ)
+            extra = "; ".join(x for x in (", ".join(s["groups"]), ", ".join(s["lecturers"])) if x)
+            line = f"{a:%H:%M}-{b:%H:%M}  {s['type']:<4} {s['subject']}  @ {s['room'] or '?'}"
+            rows.append((a, line + (f"  ({extra})" if extra else "")))
+
+    for e in call("/user/events", tok):
+        a = datetime.fromisoformat(e["startAt"]).astimezone(TZ)
+        b = datetime.fromisoformat(e["finishAt"]).astimezone(TZ)
+        if start <= a.date() <= end:
+            desc = f"  ({e['description']})" if e.get("description") else ""
+            rows.append((a, f"{a:%H:%M}-{b:%H:%M}  [personal] {e['title']}{desc}"))
+
+    rows.sort(key=lambda r: r[0])
+    print(f"Schedule {start} to {end}, times in Europe/Ljubljana"
+          + ("" if sel else "  (no subjects selected on the account)"))
+    d = start
+    while d <= end:
+        print(f"\n{d} ({d:%a})")
+        day = [line for a, line in rows if a.date() == d]
+        print("\n".join(day) if day else "no events")
+        d += timedelta(days=1)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
