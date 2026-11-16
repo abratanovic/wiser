@@ -172,6 +172,7 @@ builder.Services.AddHttpClient<backend.Services.Wise.WiseClient>(client =>
         AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate | DecompressionMethods.Brotli
     });
 builder.Services.AddScoped<backend.Services.Timetable.ITimetableSource, backend.Services.Timetable.WiseTimetableSource>();
+builder.Services.AddScoped<backend.Services.Timetable.ITimetableSource, backend.Services.Timetable.ManualTimetableSource>();
 
 // Controllers + JSON enum as string
 builder.Services.AddControllers()

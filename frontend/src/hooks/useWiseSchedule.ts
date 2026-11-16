@@ -1,7 +1,7 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {useLocalStorageState} from './useLocalStorageState';
 import {useAuth} from '@/contexts/AuthContext.shared';
-import {ApiError, getStoredSelections, saveStoredSelections} from '@/lib/api';
+import {ApiError, getManualFaculties, getStoredSelections, saveStoredSelections} from '@/lib/api';
 import {
   fetchPublishedAt,
   fetchTimetable,
@@ -22,6 +22,7 @@ const STORAGE_KEY = 'wiserSelectionsV1';
 function mapType(executionType: string): TimetableEventType {
   const t = executionType.toUpperCase().trim();
   if (t.startsWith('PR')) return 'Lecture';
+  if (t.startsWith('VJ')) return 'Exercise'; // manual faculties: vježbe
   if (t.startsWith('RV')) return 'ComputerExercise';
   if (t.startsWith('LV')) return 'LabExercise';
   if (t.startsWith('SV')) return 'SeminarExercise';
@@ -259,6 +260,30 @@ export function useWiseSchedule({
     [selections, persist],
   );
 
+  // Whether the account has any manual faculty. A signed-in student with no Wise picks still
+  // has a timetable when they do, so this decides both fetching and the empty state. Null while
+  // the answer is on its way, so the builder does not pop open over a timetable about to arrive.
+  const [hasManual, setHasManual] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!isAuthenticated || !token) {
+      setHasManual(false);
+      return;
+    }
+    setHasManual(null);
+    let cancelled = false;
+    getManualFaculties(token)
+      .then((list) => {
+        if (!cancelled) setHasManual(list.length > 0);
+      })
+      .catch(() => {
+        // Wise still works; manual classes simply stay hidden until the next load.
+        if (!cancelled) setHasManual(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, token]);
+
   const range = useMemo(() => {
     if (selectedView === 'day' && selectedDay) return {from: selectedDay, to: selectedDay};
     const week = selectedWeek ?? getAcademicWeekNumber(new Date());
@@ -272,7 +297,7 @@ export function useWiseSchedule({
   );
 
   useEffect(() => {
-    if (selections.length === 0) {
+    if (selections.length === 0 && !hasManual) {
       setEvents([]);
       setError(null);
       return;
@@ -287,6 +312,7 @@ export function useWiseSchedule({
           range.from,
           range.to,
           selections,
+          isAuthenticated ? token : null,
           controller.signal,
         );
         setEvents(sessions.map(toEvent));
@@ -302,7 +328,7 @@ export function useWiseSchedule({
     return () => controller.abort();
     // selectionKey stands in for `selections` so re-ordering alone does not refetch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [range.from, range.to, selectionKey]);
+  }, [range.from, range.to, selectionKey, hasManual, token]);
 
   // When the school last published. Wise sends no ETag on /web/, so this footer stamp is the
   // only honest "last updated" we can show.
@@ -330,6 +356,6 @@ export function useWiseSchedule({
     loading,
     error,
     publishedAt,
-    hasSelections: selections.length > 0,
+    hasSelections: selections.length > 0 || hasManual !== false,
   };
 }

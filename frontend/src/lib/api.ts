@@ -110,3 +110,39 @@ export function approveCliLogin(token: string, userCode: string): Promise<void> 
     body: JSON.stringify({userCode}),
   });
 }
+
+// ── Manual faculties ────────────────────────────────────────────────────────
+
+/** ISO day of week: 1 = Monday ... 7 = Sunday. Times are Ljubljana wall clock, "HH:mm:ss". */
+export type ManualSlot = {
+  id: number;
+  subjectId: number;
+  type: string;
+  group: string | null;
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
+  room: string | null;
+  lecturer: string | null;
+};
+
+export type ManualSubject = {
+  id: number;
+  facultyId: number;
+  name: string;
+  pickedGroup: string | null;
+  slots: ManualSlot[];
+};
+
+export type ManualFaculty = {
+  id: number;
+  name: string;
+  termStart: string; // YYYY-MM-DD
+  termEnd: string;
+  skippedDates: string[];
+  subjects: ManualSubject[];
+};
+
+export function getManualFaculties(token: string): Promise<ManualFaculty[]> {
+  return apiClient('/api/manual-faculties', {headers: authHeaders(token)});
+}

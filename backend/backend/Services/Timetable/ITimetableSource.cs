@@ -22,10 +22,13 @@ public sealed class TimetableRequest
     public List<WiseSelection> Selections { get; set; } = new();
 }
 
-/// <summary>Which source a session came from. <c>Key</c> is stable and filterable: "wise" for Wise.</summary>
+/// <summary>Which source a session came from. <c>Key</c> is stable and filterable: "wise" for Wise, "manual:&lt;facultyId&gt;" for a manual faculty.</summary>
 public sealed record SessionSource(string Key, string Kind, string Name);
 
-/// <summary>One class occurrence from any source. Times are Ljubljana wall time, no offset.</summary>
+/// <summary>
+/// One class occurrence from any source. Times are Ljubljana wall time, no offset. Manual
+/// sessions also carry the slot and the original date of the occurrence.
+/// </summary>
 public sealed record TimetableSession(
     string Id,
     SessionSource Source,
@@ -38,7 +41,9 @@ public sealed record TimetableSession(
     IReadOnlyList<string> Groups,
     string StartAt,
     string FinishAt,
-    string Status)
+    string Status,
+    int? SlotId = null,
+    DateOnly? OccurrenceDate = null)
 {
     public const string Scheduled = "scheduled";
 
