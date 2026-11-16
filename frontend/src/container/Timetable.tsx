@@ -3,7 +3,7 @@ import {TimetableHeader} from './TimetableHeader.tsx';
 import {TimeAxis} from './TimeAxis.tsx';
 import {WeekGrid} from './WeekGrid';
 import {ScheduleBuilderModal} from './ScheduleBuilderModal';
-import {ManualFacultyEditor} from './ManualFacultyEditor';
+import {ManualFacultyEditor, OccurrenceActions} from './ManualFacultyEditor';
 import type {TimetableEvent} from '@/types/TimetableEvent.ts';
 import {ScheduleColumn} from './ScheduleColumn.tsx';
 import {TimetableEventBlockDetails} from './TimetableEventBlockDetailModal.tsx';
@@ -62,6 +62,8 @@ export function Timetable({headerTitle}: {headerTitle?: string}) {
 
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [showManualEditor, setShowManualEditor] = useState(false);
+  /** Set when the editor is opened from a class on the grid ("edit weekly slot"). */
+  const [focusSlotId, setFocusSlotId] = useState<number | null>(null);
   const openManualEditor = () => {
     setShowFilterModal(false);
     setShowManualEditor(true);
@@ -242,8 +244,12 @@ export function Timetable({headerTitle}: {headerTitle?: string}) {
       {isAuthenticated && (
         <ManualFacultyEditor
           open={showManualEditor}
-          onClose={() => setShowManualEditor(false)}
+          onClose={() => {
+            setShowManualEditor(false);
+            setFocusSlotId(null);
+          }}
           onChanged={manualChanged}
+          focusSlotId={focusSlotId}
         />
       )}
 
@@ -344,8 +350,23 @@ export function Timetable({headerTitle}: {headerTitle?: string}) {
           <TimetableEventBlockDetails
             open={!!selectedEvent}
             event={selectedEvent ?? undefined}
-            onClose={() => setSelectedEvent(null)}
-          />
+            onClose={() => setSelectedEvent(null)}>
+            {isAuthenticated && selectedEvent?.slotId != null && selectedEvent.occurrenceDate && (
+              <OccurrenceActions
+                key={selectedEvent.id}
+                event={selectedEvent}
+                onChanged={() => {
+                  setSelectedEvent(null);
+                  manualChanged(true);
+                }}
+                onEditSlot={(slotId) => {
+                  setSelectedEvent(null);
+                  setFocusSlotId(slotId);
+                  openManualEditor();
+                }}
+              />
+            )}
+          </TimetableEventBlockDetails>
 
           <footer className="mt-10 border-t pt-5 text-center text-xs text-muted-foreground">
             <p className="mx-auto max-w-prose leading-relaxed">

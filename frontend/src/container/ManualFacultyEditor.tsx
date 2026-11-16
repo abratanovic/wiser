@@ -1,5 +1,6 @@
 import {useCallback, useEffect, useRef, useState} from 'react';
-import {Check, Loader2, Pencil, Plus, Trash2, X} from 'lucide-react';
+import {CalendarClock, CalendarX2, Check, Loader2, Pencil, Plus, Trash2, Undo2, X} from 'lucide-react';
+import type {TimetableEvent} from '@/types/TimetableEvent';
 import {Modal} from '@/components/Modal';
 import {useAuth} from '@/contexts/AuthContext.shared';
 import {
@@ -10,7 +11,9 @@ import {
   deleteManualFaculty,
   deleteManualSlot,
   deleteManualSubject,
+  deleteSlotException,
   getManualFaculties,
+  putSlotException,
   updateManualFaculty,
   updateManualSlot,
   updateManualSubject,
@@ -637,6 +640,9 @@ const FIELD_MESSAGES: Record<string, string> = {
   dayofweek: 'Izberi dan v tednu.',
   starttime: 'Vpiši veljaven začetek.',
   endtime: 'Konec mora biti po začetku.',
+  newstart: 'Vpiši veljaven začetek.',
+  newend: 'Konec mora biti po začetku.',
+  date: 'Ta termin na ta dan ne poteka več. Osveži urnik.',
 };
 
 function errorsOf(e: unknown): Record<string, string> {
@@ -656,6 +662,127 @@ function messageOf(e: unknown): string {
 function formatDate(iso: string) {
   const [y, m, d] = iso.split('-');
   return `${Number(d)}. ${Number(m)}. ${y}`;
+}
+
+// ── One occurrence (opened from a class on the grid) ─────────────────────────
+
+/** "2026-11-16" and "09:00" for a moment, in Ljubljana wall time like the API. */
+const ljDate = (d: Date) => d.toLocaleDateString('sv-SE', {timeZone: 'Europe/Ljubljana'});
+const ljTime = (d: Date) => d.toLocaleTimeString('sv-SE', {timeZone: 'Europe/Ljubljana', hour: '2-digit', minute: '2-digit'});
+
+/**
+ * Cancel, move or undo this one occurrence of a manual class, or jump to its weekly slot.
+ * `onChanged` runs after a saved change so the grid refetches.
+ */
+export function OccurrenceActions({event, onChanged, onEditSlot}: {
+  event: TimetableEvent;
+  onChanged: () => void;
+  onEditSlot: (slotId: number) => void;
+}) {
+  const {token} = useAuth();
+  const {busy, errors, run} = useSubmit();
+  const [moving, setMoving] = useState(false);
+  const [move, setMove] = useState(() => ({
+    date: ljDate(event.startAt),
+    start: ljTime(event.startAt),
+    end: ljTime(event.finishAt),
+    room: event.roomName,
+  }));
+  const slotId = event.slotId!;
+  const date = event.occurrenceDate!;
+  const changed = event.status !== 'scheduled';
+
+  const save = (call: (token: string) => Promise<unknown>) =>
+    run(async () => {
+      if (!token) throw new Error('Prijava je potekla. Prijavi se znova.');
+      await call(token);
+      onChanged();
+    });
+
+  return (
+    <section className='space-y-3 border-t pt-4' aria-label='Ta termin'>
+      {changed && (
+        <p className='flex items-center gap-2 text-sm text-muted-foreground'>
+          {event.status === 'cancelled' ? <CalendarX2 size={16} /> : <CalendarClock size={16} />}
+          {event.status === 'cancelled'
+            ? `Odpovedano za ${formatDate(date)}.`
+            : `Prestavljeno s ${formatDate(date)}.`}
+        </p>
+      )}
+
+      {moving ? (
+        <form
+          className='space-y-3 rounded-md border bg-muted/30 p-3'
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              e.stopPropagation();
+              setMoving(false);
+            }
+          }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            save((t) => putSlotException(t, slotId, date, {
+              kind: 'moved',
+              newStart: `${move.date}T${move.start}:00`,
+              newEnd: `${move.date}T${move.end}:00`,
+              newRoom: move.room || null,
+            }));
+          }}>
+          <div className='grid grid-cols-2 gap-3 sm:grid-cols-4'>
+            <Field label='Nov datum' className='col-span-2'>
+              <input type='date' className={input} required autoFocus value={move.date}
+                onChange={(e) => setMove({...move, date: e.target.value})} />
+            </Field>
+            <Field label='Začetek' error={errors.newstart}>
+              <input type='time' className={input} required value={move.start} aria-invalid={!!errors.newstart}
+                onChange={(e) => setMove({...move, start: e.target.value})} />
+            </Field>
+            <Field label='Konec' error={errors.newend}>
+              <input type='time' className={input} required value={move.end} aria-invalid={!!errors.newend}
+                onChange={(e) => setMove({...move, end: e.target.value})} />
+            </Field>
+            <Field label='Prostor' className='col-span-2 sm:col-span-4' error={errors.newroom}>
+              <input className={input} maxLength={200} value={move.room} onChange={(e) => setMove({...move, room: e.target.value})} />
+            </Field>
+          </div>
+          <FormError errors={errors} known={['newstart', 'newend', 'newroom']} />
+          <div className='flex justify-end gap-2'>
+            <button type='button' className={btnGhost} onClick={() => setMoving(false)}>Prekliči</button>
+            <button type='submit' className={btnPrimary} disabled={busy}>
+              {busy ? <Loader2 size={15} className='animate-spin' /> : <Check size={15} />}
+              Prestavi
+            </button>
+          </div>
+        </form>
+      ) : (
+        <>
+          <div className='flex flex-wrap items-center gap-2'>
+            {event.status !== 'cancelled' && (
+              <button type='button' className={btnGhost} disabled={busy}
+                onClick={() => save((t) => putSlotException(t, slotId, date, {kind: 'cancelled'}))}>
+                <CalendarX2 size={15} /> Odpovej ta termin
+              </button>
+            )}
+            <button type='button' className={btnGhost} disabled={busy} onClick={() => setMoving(true)}>
+              <CalendarClock size={15} /> {event.status === 'moved' ? 'Prestavi drugam' : 'Prestavi ta termin'}
+            </button>
+            {changed && (
+              <button type='button' className={btnGhost} disabled={busy}
+                onClick={() => save((t) => deleteSlotException(t, slotId, date))}>
+                <Undo2 size={15} /> {event.status === 'cancelled' ? 'Razveljavi odpoved' : 'Razveljavi prestavitev'}
+              </button>
+            )}
+            <button type='button' className={`${btn} text-muted-foreground hover:bg-muted hover:text-foreground sm:ml-auto`}
+              onClick={() => onEditSlot(slotId)}>
+              <Pencil size={15} /> Uredi tedenski termin
+            </button>
+            {busy && <Loader2 size={15} className='animate-spin text-muted-foreground' aria-label='Shranjujem' />}
+          </div>
+          <FormError errors={errors} />
+        </>
+      )}
+    </section>
+  );
 }
 
 /** Slovene has four number forms: 1, 2, 3–4, 5+. */

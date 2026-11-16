@@ -188,3 +188,13 @@ export const updateManualSlot = (token: string, id: number, slot: SlotInput) =>
   send<ManualSlot>(token, 'PUT', `/slots/${id}`, slot);
 export const deleteManualSlot = (token: string, id: number) =>
   send<void>(token, 'DELETE', `/slots/${id}`);
+
+/** One occurrence cancelled, or moved to a new Ljubljana wall time ("2026-11-18T14:00:00"). */
+export type SlotExceptionInput =
+  | {kind: 'cancelled'}
+  | {kind: 'moved'; newStart: string; newEnd: string; newRoom?: string | null};
+
+export const putSlotException = (token: string, slotId: number, date: string, body: SlotExceptionInput) =>
+  send<unknown>(token, 'PUT', `/slots/${slotId}/exceptions/${date}`, body);
+export const deleteSlotException = (token: string, slotId: number, date: string) =>
+  send<void>(token, 'DELETE', `/slots/${slotId}/exceptions/${date}`);

@@ -9,12 +9,15 @@ export type TimetableEventBlockDetailsProps = {
   open: boolean;
   event?: TimetableEvent;
   onClose: () => void;
+  /** Shown under the details, e.g. the occurrence actions of a manual class. */
+  children?: React.ReactNode;
 };
 
 export function TimetableEventBlockDetails({
   open,
   event,
   onClose,
+  children,
 }: TimetableEventBlockDetailsProps) {
   const { t } = useI18n();
   return (
@@ -124,6 +127,7 @@ export function TimetableEventBlockDetails({
               </div>
             </div>
           </div>
+          {children}
         </div>
       )}
     </Modal>

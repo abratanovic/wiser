@@ -23,10 +23,11 @@ export function TimetableEventBlock({
 }: TimetableEventBlockProps) {
   const { t } = useI18n();
   const c = getEventColors(ev.type);
+  const status = ev.status === "cancelled" || ev.status === "moved" ? ev.status : null;
   return (
     <div
       key={ev.id}
-      className="absolute rounded-md p-1 font-inter cursor-pointer"
+      className={`absolute rounded-md p-1 font-inter cursor-pointer ${status === "cancelled" ? "opacity-45" : ""}`}
       style={{
         top: ev.__top,
         height: ev.__height,
@@ -35,13 +36,16 @@ export function TimetableEventBlock({
       }}
       title={`${ljTimeFmt.format(ev.startAt)}–${ljTimeFmt.format(ev.finishAt)}${
         showSource ? ` · ${ev.source.name}` : ""
-      }`}
+      }${status ? ` · ${t.details[status]}` : ""}`}
       onClick={() => onClick?.(ev)}
     >
       <div
-        className={`w-full h-full p-1.5 sm:p-1.5 space-y-0.5 rounded-sm hover:brightness-95 transition-all overflow-hidden ${c.bg} ${c.text} ${c.darkBg} ${c.darkText}`}
+        className={`w-full h-full p-1.5 sm:p-1.5 space-y-0.5 rounded-sm hover:brightness-95 transition-all overflow-hidden ${
+          // Moved: a dashed edge says "not where this week usually puts it".
+          status === "moved" ? "outline-1 outline-dashed -outline-offset-1 outline-current/60" : ""
+        } ${c.bg} ${c.text} ${c.darkBg} ${c.darkText}`}
       >
-        <h2 className="text-sm sm:text-xs md:text-sm font-bold line-clamp-2 leading-tight">
+        <h2 className={`text-sm sm:text-xs md:text-sm font-bold line-clamp-2 leading-tight ${status === "cancelled" ? "line-through decoration-2" : ""}`}>
           {ev.className}
         </h2>
         <div className="flex items-center gap-0.5 sm:gap-1 text-xs sm:text-xs font-medium truncate">
@@ -71,6 +75,9 @@ export function TimetableEventBlock({
           <Clock size={12} strokeWidth={1.5} className="flex-shrink-0" />
           <p className="truncate">
             {ljTimeFmt.format(ev.startAt)}–{ljTimeFmt.format(ev.finishAt)}
+            {status && (
+              <span className="text-[0.65rem] font-semibold uppercase tracking-wide"> · {t.details[status]}</span>
+            )}
           </p>
         </div>
         {ev.type === "ComputerExercise" ? (
