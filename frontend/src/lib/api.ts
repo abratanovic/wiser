@@ -50,7 +50,7 @@ async function apiClient<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
-function authHeaders(token: string, json = false): HeadersInit {
+export function authHeaders(token: string, json = false): HeadersInit {
   return json
     ? {'Content-Type': 'application/json', Authorization: `Bearer ${token}`}
     : {Authorization: `Bearer ${token}`};

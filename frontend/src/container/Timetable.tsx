@@ -289,7 +289,7 @@ export function Timetable({headerTitle}: {headerTitle?: string}) {
             <button
               className='text-sm text-muted-foreground underline decoration-border underline-offset-4 hover:text-foreground'
               onClick={openManualEditor}>
-              Fakulteta brez Wise? Vpiši njen urnik
+              {t.manual.openEditor}
             </button>
           )}
         </div>
