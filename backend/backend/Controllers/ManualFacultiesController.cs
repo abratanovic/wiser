@@ -69,7 +69,14 @@ public class ManualFacultiesController(AppDbContext db) : ControllerBase
     {
         var subject = await MySubjects.FirstOrDefaultAsync(s => s.Id == id);
         if (subject == null) return NotFound();
+        var group = string.IsNullOrWhiteSpace(req.PickedGroup) ? null : req.PickedGroup.Trim();
+        if (group != null && !await db.ManualSlots.AnyAsync(s => s.SubjectId == id && s.Group == group))
+        {
+            ModelState.AddModelError(nameof(req.PickedGroup), "The subject has no slot in this group");
+            return ValidationProblem(ModelState);
+        }
         subject.Name = req.Name;
+        subject.PickedGroup = group;
         await db.SaveChangesAsync();
         return Ok(subject);
     }
@@ -129,6 +136,8 @@ public sealed class FacultyRequest : IValidatableObject
 public sealed class SubjectRequest
 {
     [Required, StringLength(200, MinimumLength = 1)] public string Name { get; set; } = "";
+    /// <summary>Null keeps every group; otherwise one of the subject's slot groups. Ignored on create.</summary>
+    [StringLength(50)] public string? PickedGroup { get; set; }
 }
 
 public sealed class SlotRequest : IValidatableObject

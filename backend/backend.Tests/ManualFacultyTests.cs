@@ -163,6 +163,95 @@ public sealed class ManualFacultyTests(ApiFactory api)
         Assert.Empty((await client.GetFromJsonAsync<JsonElement[]>(Faculties))!);
     }
 
+    private static Task<HttpResponseMessage> PickAsync(HttpClient client, int subjectId, string? pickedGroup, string name = "Arapski") =>
+        client.PutAsJsonAsync($"{Faculties}/subjects/{subjectId}", new {name, pickedGroup});
+
+    private static string[] Starts(JsonElement[] sessions) =>
+        sessions.Select(s => s.GetProperty("startAt").GetString()!).ToArray();
+
+    [Fact]
+    public async Task Picked_group_is_shown_and_the_subjects_other_groups_are_hidden_but_ungrouped_slots_stay()
+    {
+        var client = await api.CreateSignedInClientAsync();
+        var faculty = await CreateFacultyAsync(client);
+        var arapski = await CreateSubjectAsync(client, faculty);
+        await CreateSlotAsync(client, arapski, Slot(1, "09:00", "11:00"));
+        await CreateSlotAsync(client, arapski, Slot(1, "13:30", "14:30", "VJ", "III"));
+        await CreateSlotAsync(client, arapski, Slot(1, "14:30", "15:30", "VJ", "II"));
+        var engleski = await CreateSubjectAsync(client, faculty, "Engleski");
+        await CreateSlotAsync(client, engleski, Slot(2, "13:30", "14:30", "VJ"));
+
+        Assert.Equal(HttpStatusCode.OK, (await PickAsync(client, arapski, "II")).StatusCode);
+
+        Assert.Equal(
+            ["2026-11-16T09:00:00", "2026-11-16T14:30:00", "2026-11-17T13:30:00"],
+            Starts(await TimetableAsync(client, "2026-11-16", "2026-11-22")));
+    }
+
+    [Fact]
+    public async Task Subject_with_no_pick_shows_every_group()
+    {
+        var client = await api.CreateSignedInClientAsync();
+        var subject = await CreateSubjectAsync(client, await CreateFacultyAsync(client));
+        await CreateSlotAsync(client, subject, Slot(1, "13:30", "14:30", "VJ", "III"));
+        await CreateSlotAsync(client, subject, Slot(1, "14:30", "15:30", "VJ", "II"));
+        Assert.Equal(HttpStatusCode.OK, (await PickAsync(client, subject, "II")).StatusCode);
+
+        Assert.Equal(HttpStatusCode.OK, (await PickAsync(client, subject, null)).StatusCode);
+
+        Assert.Equal(["2026-11-16T13:30:00", "2026-11-16T14:30:00"],
+            Starts(await TimetableAsync(client, "2026-11-16", "2026-11-22")));
+    }
+
+    [Fact]
+    public async Task Renaming_a_subject_keeps_the_pick_it_is_sent_with()
+    {
+        var client = await api.CreateSignedInClientAsync();
+        var subject = await CreateSubjectAsync(client, await CreateFacultyAsync(client));
+        await CreateSlotAsync(client, subject, Slot(1, "13:30", "14:30", "VJ", "III"));
+        await CreateSlotAsync(client, subject, Slot(1, "14:30", "15:30", "VJ", "II"));
+        await PickAsync(client, subject, "II");
+
+        var res = await PickAsync(client, subject, "II", name: "Tefsir");
+
+        Assert.Equal("II", (await res.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("pickedGroup").GetString());
+        var sessions = await TimetableAsync(client, "2026-11-16", "2026-11-22");
+        Assert.Equal(["2026-11-16T14:30:00"], Starts(sessions));
+        Assert.Equal("Tefsir", sessions[0].GetProperty("subject").GetString());
+    }
+
+    [Fact]
+    public async Task A_pick_whose_last_slot_was_deleted_hides_nothing()
+    {
+        var client = await api.CreateSignedInClientAsync();
+        var subject = await CreateSubjectAsync(client, await CreateFacultyAsync(client));
+        await CreateSlotAsync(client, subject, Slot(1, "13:30", "14:30", "VJ", "III"));
+        var picked = await CreateSlotAsync(client, subject, Slot(1, "14:30", "15:30", "VJ", "II"));
+        await PickAsync(client, subject, "II");
+
+        await client.DeleteAsync($"{Faculties}/slots/{picked}");
+
+        Assert.Equal(["2026-11-16T13:30:00"], Starts(await TimetableAsync(client, "2026-11-16", "2026-11-22")));
+    }
+
+    [Theory]
+    [InlineData("IV")] // no slot of this subject has it
+    [InlineData("I")]  // another subject's group
+    public async Task Rejects_picking_a_group_the_subject_does_not_have(string group)
+    {
+        var client = await api.CreateSignedInClientAsync();
+        var faculty = await CreateFacultyAsync(client);
+        var subject = await CreateSubjectAsync(client, faculty);
+        await CreateSlotAsync(client, subject, Slot(1, "13:30", "14:30", "VJ", "II"));
+        await CreateSlotAsync(client, await CreateSubjectAsync(client, faculty, "Hadis"), Slot(2, "12:00", "13:00", "VJ", "I"));
+
+        var res = await PickAsync(client, subject, group);
+
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+        Assert.Equal(["2026-11-16T13:30:00", "2026-11-17T12:00:00"],
+            Starts(await TimetableAsync(client, "2026-11-16", "2026-11-22")));
+    }
+
     [Theory]
     [InlineData(1, "10:00", "09:00")] // end before start
     [InlineData(1, "10:00", "10:00")] // zero length

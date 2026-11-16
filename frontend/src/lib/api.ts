@@ -177,8 +177,9 @@ export const deleteManualFaculty = (token: string, id: number) =>
 
 export const createManualSubject = (token: string, facultyId: number, name: string) =>
   send<ManualSubject>(token, 'POST', `/${facultyId}/subjects`, {name});
-export const updateManualSubject = (token: string, id: number, name: string) =>
-  send<ManualSubject>(token, 'PUT', `/subjects/${id}`, {name});
+/** Full replace: always send the current pickedGroup, or a rename clears the pick. */
+export const updateManualSubject = (token: string, id: number, name: string, pickedGroup: string | null) =>
+  send<ManualSubject>(token, 'PUT', `/subjects/${id}`, {name, pickedGroup});
 export const deleteManualSubject = (token: string, id: number) =>
   send<void>(token, 'DELETE', `/subjects/${id}`);
 

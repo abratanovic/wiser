@@ -31,7 +31,7 @@ public sealed class ManualTimetableSource(AppDbContext db) : ITimetableSource
             var isoDay = date.DayOfWeek == DayOfWeek.Sunday ? 7 : (int)date.DayOfWeek;
 
             foreach (var subject in faculty.Subjects)
-            foreach (var slot in subject.Slots.Where(s => s.DayOfWeek == isoDay))
+            foreach (var slot in subject.Slots.Where(s => s.DayOfWeek == isoDay && InPickedGroup(subject, s)))
                 yield return new TimetableSession(
                     Id: $"manual:{slot.Id}:{date:yyyy-MM-dd}",
                     Source: source,
@@ -49,6 +49,11 @@ public sealed class ManualTimetableSource(AppDbContext db) : ITimetableSource
                     OccurrenceDate: date);
         }
     }
+
+    /// <summary>Ungrouped slots always show; a pick no slot uses any more (group renamed or deleted) hides nothing.</summary>
+    private static bool InPickedGroup(ManualSubject subject, ManualSlot slot) =>
+        slot.Group == null || subject.PickedGroup == null || slot.Group == subject.PickedGroup
+        || subject.Slots.All(s => s.Group != subject.PickedGroup);
 
     private static string WallTime(DateOnly date, TimeOnly time) => date.ToDateTime(time).ToString("yyyy-MM-ddTHH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
 }
