@@ -1,10 +1,15 @@
-import "./App.css";
-import { Timetable } from "./container/Timetable";
+import './App.css';
+import {Timetable} from './container/Timetable';
+import {WelcomeModal} from './components/WelcomeModal';
 
 function App() {
   return (
     <>
-      <Timetable courseId={1} headerTitle="RIT 2 VS" />
+      <WelcomeModal />
+
+      {/* The timetable is assembled from the student's own subject selections, so there is no
+          cohort to resolve up front. */}
+      <Timetable />
     </>
   );
 }

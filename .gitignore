@@ -22,7 +22,17 @@ bld/
 [Oo]bj/
 [Ll]og/
 [Ll]ogs/
+
+# Secrets. .env.example is the only one that may be committed — it holds placeholders.
 .env
+.env.*
+!.env.example
+!.env.production.example
+appsettings.Development.json
+appsettings.*.Local.json
+appsettings.Local.json
+*.pfx
+*.key
 
 # .NET Core
 project.lock.json
@@ -53,3 +63,21 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+
+# Runtime data written by the backend (logs).
+backend/backend/Data/
+backend/backend/Logs/
+
+# Editor and OS cruft
+.DS_Store
+.idea/
+*.DotSettings.user
+
+# Database dumps written by deploy/backup.sh
+deploy/backups/
+
+# Docker CLI config, kept out of the encrypted home (see deploy/update.sh)
+.docker/
+
+# Written by deploy/update.sh after a successful deploy
+.deployed-commit

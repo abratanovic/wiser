@@ -1,14 +1,15 @@
-version: "3.9"
-
 services:
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        # Build-time, not runtime: Vite bakes this into the bundle. Empty is the production
+        # value and means same-origin — nginx in this image proxies /api, /auth and /user to
+        # the backend, so the browser never makes a cross-origin request.
+        VITE_API_BASE_URL: '${VITE_API_BASE_URL-}'
     container_name: frontend
     ports:
-      - "5173:5173"
-    environment:
-      VITE_API_BASE_URL: "https://urnik.live/api/api/Timetable"
-      __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS: "urnik.live,.urnik.live"
+      - '${FRONTEND_PORT:-8080}:80'
     restart: unless-stopped
     depends_on:
       backend:
@@ -18,24 +19,37 @@ services:
     build: ./backend
     container_name: backend
     ports:
-      - "5013:5013"
+      # Bound to loopback: the frontend container reaches the backend over the compose network,
+      # and the tunnel runs on this host. Nothing on the LAN needs to reach it directly.
+      - '127.0.0.1:${BACKEND_PORT:-5013}:5013'
     environment:
-      DB_CONNECTION_STRING: "Host=database;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
-      DOWNLOAD_PATH: /app/Data/ExcelFiles
-      SCREENSHOT_PATH: /app/Data/Screenshots
+      # Same POSTGRES_* values the database container is created with, so the two can never
+      # disagree. Only the host differs: inside the compose network the database answers as
+      # "database" on 5432, whatever port it is published on outside.
+      POSTGRES_HOST: database
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
       LOG_FILE_DIRECTORY: /app/Data/Logs
+      Jwt__Secret: '${Jwt__Secret}'
+      Jwt__Issuer: '${Jwt__Issuer}'
+      Jwt__Audience: '${Jwt__Audience}'
+      Google__ClientId: '${Google__ClientId}'
+      Google__ClientSecret: '${Google__ClientSecret}'
+      Frontend__Url: '${Frontend__Url}'
     restart: unless-stopped
     depends_on:
       database:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/5013' "]
+      test: ['CMD-SHELL', "bash -c 'echo > /dev/tcp/127.0.0.1/5013' "]
       interval: 5s
       timeout: 5s
       retries: 20
 
   database:
-    image: postgres
+    image: postgres:16
     container_name: database
     restart: always
     environment:
@@ -43,12 +57,21 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     ports:
-      - "5432:5432"
+      # Bound to loopback, and only so a developer can reach the database with psql. The backend
+      # always reaches it as database:5432 on the compose network, so on a server this line can
+      # be deleted outright.
+      #
+      # 5433 rather than 5432 because a locally installed PostgreSQL service commonly owns 5432;
+      # when it does, this container cannot bind and anything pointing at localhost:5432 quietly
+      # reaches that other server instead.
+      - '127.0.0.1:${POSTGRES_PORT:-5433}:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test:
         [
-          "CMD-SHELL",
-          "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB || exit 1",
+          'CMD-SHELL',
+          'pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB || exit 1',
         ]
       interval: 5s
       timeout: 5s
@@ -57,13 +80,18 @@ services:
   pgadmin:
     image: dpage/pgadmin4
     container_name: pgadmin
-    profiles: ["tools"]
+    profiles: ['tools']
     restart: always
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@admin.com
-      PGADMIN_DEFAULT_PASSWORD: root
+      PGADMIN_DEFAULT_EMAIL: '${PGADMIN_EMAIL:-admin@example.com}'
+      # No default on purpose. pgadmin refuses to start without a password, which is the right
+      # outcome: the previous value was literally "root" on a published port.
+      PGADMIN_DEFAULT_PASSWORD: '${PGADMIN_PASSWORD:-}'
     ports:
-      - "5050:80"
+      - '127.0.0.1:5050:80'
     depends_on:
       database:
         condition: service_healthy
+
+volumes:
+  postgres_data:

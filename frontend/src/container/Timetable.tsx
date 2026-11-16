@@ -1,41 +1,33 @@
-import { useEffect, useState } from "react";
+import {useEffect, useState, useMemo} from 'react';
+import {TimetableHeader} from './TimetableHeader.tsx';
+import {TimeAxis} from './TimeAxis.tsx';
+import {WeekGrid} from './WeekGrid';
+import {ScheduleBuilderModal} from './ScheduleBuilderModal';
+import type {TimetableEvent} from '@/types/TimetableEvent.ts';
+import {ScheduleColumn} from './ScheduleColumn.tsx';
+import {TimetableEventBlockDetails} from './TimetableEventBlockDetailModal.tsx';
+import {useI18n} from '@/lib/i18n';
+import {useLocalStorageState} from '@/hooks/useLocalStorageState';
 import {
-  ChevronLeft,
-  ChevronRight,
-  Moon,
-  Sun,
-  Globe,
-  SlidersHorizontal,
-} from "lucide-react";
-import { RoundedButton } from "@/components/RoundedButton";
-import { Brand } from "@/components/Brand";
-import { TimetableHeader } from "./TimetableHeader.tsx";
-import { TimeAxis } from "./TimeAxis.tsx";
-import { WeekGrid } from "./WeekGrid";
-import { OnboardingFiltersModal } from "./OnboardingFiltersModal";
-import { useNow } from "@/lib/useNow";
-import type { TimetableEvent } from "@/types/TimetableEvent.ts";
-import { ScheduleColumn } from "./ScheduleColumn.tsx";
-import { TimetableEventBlockDetails } from "./TimetableEventBlockDetailModal.tsx";
-import { useI18n } from "@/lib/i18n";
-import { EventTypeIndicator } from "@/components/EventTypeIndicator.tsx";
-import { useLocalStorageState } from "@/hooks/useLocalStorageState";
-import { weeksInAcademicYear } from "@/utils/academicCalendar";
-import { useTimetableNavigation } from "@/hooks/useTimetableNavigation";
-import { useAcademicCalendar } from "@/hooks/useAcademicCalendar";
-import { useTimetableData } from "@/hooks/useTimetableData";
-import { useTimetableFilters } from "@/hooks/useTimetableFilters";
-import { useWinterQuirks } from "@/hooks/useWinterQuirks";
-import { toast } from "sonner";
+  weeksInAcademicYear,
+  getAcademicWeekNumber,
+  academicYearForDate,
+  isSameDay,
+} from '@/utils/academicCalendar';
+import {useTimetableNavigation} from '@/hooks/useTimetableNavigation';
+import {useAcademicCalendar} from '@/hooks/useAcademicCalendar';
+import {useWiseSchedule} from '@/hooks/useWiseSchedule';
+import {useAuth} from '@/contexts/AuthContext.shared';
+import {TimetableControls} from './TimetableControls';
+import {CurrentTimeIndicator} from './CurrentTimeIndicator';
+import PageHeader from '@/components/PageHeader.tsx';
 
-export function Timetable({
-  courseId,
-  headerTitle,
-}: {
-  courseId: number;
-  headerTitle?: string;
-}) {
-  // Navigation state (view, day, week selection)
+const HOUR_HEIGHT = 64;
+const DAY_START = 7;
+const DAY_END = 21;
+const hours = Array.from({length: DAY_END - DAY_START + 1}, (_, i) => i + DAY_START);
+
+export function Timetable({headerTitle}: {headerTitle?: string}) {
   const {
     selectedView,
     setSelectedView,
@@ -45,377 +37,309 @@ export function Timetable({
     setSelectedWeek,
   } = useTimetableNavigation();
 
-  // Academic calendar state
-  const { selectedAcademicYear, setSelectedAcademicYear, academicYear } =
-    useAcademicCalendar({
-      selectedView,
-      selectedDay,
-    });
+  const {selectedAcademicYear, setSelectedAcademicYear, academicYear} =
+    useAcademicCalendar({selectedView, selectedDay});
 
-  // Data fetching
-  const { events, loading, error, classes, groups, latestCheck } =
-    useTimetableData({
-      selectedView,
-      selectedDay,
-      selectedWeek,
-      academicYear,
-      courseId,
-    });
-
-  // Filtering
+  // The timetable is built from the student's own selections — a subject plus, where the
+  // execution splits, their group. Filtering happens on the server, so what arrives here is
+  // already only their events.
   const {
-    groupFilter,
-    setGroupFilter,
-    filteredEvents,
-    showFilterModal,
-    setShowFilterModal,
-    hasInitialFilters,
-  } = useTimetableFilters(events);
+    selections,
+    addSelection,
+    removeSelection,
+    updatePicks,
+    events: filteredEvents,
+    loading,
+    error,
+    publishedAt,
+    hasSelections,
+  } = useWiseSchedule({selectedView, selectedDay, selectedWeek, academicYear});
 
-  // Theme and i18n
-  const [isDark, setIsDark] = useLocalStorageState<boolean>("themeV2", false, {
-    legacyKeys: ["themeV1"],
-    serialize: (v) => (v ? "dark" : "light"),
-    deserialize: (s) => s === "dark",
+  const {isAuthenticated, login} = useAuth();
+
+  const [showFilterModal, setShowFilterModal] = useState(false);
+
+  const [isDark, setIsDark] = useLocalStorageState<boolean>('themeV2', false, {
+    legacyKeys: ['themeV1'],
+    serialize: (v) => (v ? 'dark' : 'light'),
+    deserialize: (s) => s === 'dark',
   });
-  const { t, locale, setLocale } = useI18n();
+  const {t} = useI18n();
 
-  // Selected event for detail modal
-  const [selectedEvent, setSelectedEvent] = useState<TimetableEvent | null>(
-    null
-  );
+  const [selectedEvent, setSelectedEvent] = useState<TimetableEvent | null>(null);
 
-  // Winter quirks (scrolling tree, Friday snowflake cursor)
-  useWinterQuirks();
-
-  // layout constants
-  const HOUR_HEIGHT = 64; // px per hour
-  const DAY_START = 7;
-  const DAY_END = 21;
-  const hours = Array.from(
-    { length: DAY_END - DAY_START + 1 },
-    (_, i) => i + DAY_START
-  );
-
-  // Current time indicator helpers
-  const now = useNow(30000);
-  const ljParts = (d: Date) =>
-    new Intl.DateTimeFormat("en-GB", {
-      timeZone: "Europe/Ljubljana",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    }).formatToParts(d);
-  const nowTopPx = () => {
-    const parts = ljParts(now);
-    const h = Number(parts.find((p) => p.type === "hour")?.value ?? "0");
-    const m = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
-    const minutesFromStart = (h - DAY_START) * 60 + m;
-    return (minutesFromStart / 60) * HOUR_HEIGHT;
-  };
-  const nowLabel = () =>
-    new Intl.DateTimeFormat(t.locale, {
-      timeZone: "Europe/Ljubljana",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    }).format(now);
-
-  // Open onboarding modal if no filters are saved
+  // Keep URL in sync so the current view can be shared
   useEffect(() => {
-    if (classes.length > 0 && !hasInitialFilters) {
-      setShowFilterModal(true);
-    }
-  }, [classes, hasInitialFilters, setShowFilterModal]);
-
-  // Check if data is stale (last check was more than 30 minutes ago)
-  useEffect(() => {
-    if (latestCheck != null) {
-      const thirtyMinutesAgo = Date.now() - 30 * 60 * 1000; // 30 minutes
-      if (latestCheck < thirtyMinutesAgo) {
-        toast.error(
-          t.common.staleDataWarning ||
-            "Data might not be up to date. Last update was more than 30 minutes ago.",
-          {
-            duration: Infinity, // Stays until manually dismissed
-          }
-        );
+    const params = new URLSearchParams();
+    params.set('v', selectedView);
+    if (selectedView === 'day' && selectedDay) {
+      // Format as YYYY-MM-DD in Ljubljana timezone
+      params.set(
+        'd',
+        new Intl.DateTimeFormat('sv-SE', {timeZone: 'Europe/Ljubljana'}).format(
+          selectedDay,
+        ),
+      );
+    } else if (selectedView === 'week' && selectedWeek != null) {
+      // Only pin the week when it is NOT the current one. Writing it unconditionally is how the
+      // app poisoned its own URL: it stamped a stale academic year in, that URL then outranked
+      // every later correction, and the grid stayed on a week with no data. Leaving it out means
+      // a plain link always opens on whatever week the reader is actually in, which is also what
+      // somebody sharing "the timetable" means.
+      const currentWeek = getAcademicWeekNumber(new Date());
+      const currentYear = academicYearForDate(new Date());
+      if (selectedWeek !== currentWeek || selectedAcademicYear !== currentYear) {
+        params.set('w', String(selectedWeek));
+        params.set('y', String(selectedAcademicYear));
       }
     }
-  }, [latestCheck, t.common.staleDataWarning]);
+    window.history.replaceState(null, '', '?' + params.toString());
+  }, [selectedView, selectedDay, selectedWeek, selectedAcademicYear]);
 
-  // Apply theme to <html> element and persist
+  // Apply theme to <html> element
   useEffect(() => {
-    try {
-      const el = document.documentElement;
-      el.classList.toggle("dark", isDark);
-      localStorage.setItem("themeV2", isDark ? "dark" : "light");
-    } catch {}
+    document.documentElement.classList.toggle('dark', isDark);
+    try { localStorage.setItem('themeV2', isDark ? 'dark' : 'light'); } catch { /* storage unavailable */ }
   }, [isDark]);
 
-  // Persist filter changes
+  // An empty timetable has nothing to show, so open the builder straight away — but only for
+  // somebody signed in, whose empty timetable really does mean "nothing picked yet". Signed
+  // out it means something else entirely, and may well mean a timetable sitting safely on an
+  // account: the welcome modal offers to sign in, and this one used to open on top of it and
+  // bury the offer under a subject picker.
   useEffect(() => {
-    try {
-      localStorage.setItem(
-        "timetableGroupFilterV2",
-        JSON.stringify(groupFilter)
-      );
-    } catch {}
-  }, [groupFilter]);
+    if (isAuthenticated && !hasSelections) setShowFilterModal(true);
+  }, [isAuthenticated, hasSelections]);
 
+  // The old staleness toast is gone on purpose. It measured how long ago OUR scraper last ran,
+  // which needed warning about. What we now show is when the SCHOOL last published, and that
+  // being weeks old is normal — a 30-minute threshold against it would warn permanently.
+
+  const handleResetToToday = () => {
+    const today = new Date();
+    if (selectedView === 'day') {
+      setSelectedDay(today);
+      return;
+    }
+    // Set the YEAR as well as the week. Setting only the week is what sent "today" to week N of
+    // whatever year happened to be selected — the week number is meaningless without the year
+    // it counts from, and the two must always move together.
+    setSelectedAcademicYear(academicYearForDate(today));
+    setSelectedWeek(getAcademicWeekNumber(today));
+  };
+
+  // Year and week are set side by side, never one from inside the other's updater. A state
+  // updater may run more than once, and a setSelectedAcademicYear call nested in one moved the
+  // year twice per click — which is how the grid ended up on a week of the wrong year.
   const onPrev = () => {
-    if (selectedView === "day") {
+    if (selectedView === 'day') {
       setSelectedDay((prev) => {
         if (!prev) return prev;
         const next = new Date(prev);
         next.setDate(prev.getDate() - 1);
         return next;
       });
-    } else {
-      setSelectedWeek((prev) => {
-        const current = prev ?? 1;
-        if (current > 1) return current - 1;
-        // wrap to previous academic year
-        setSelectedAcademicYear((ay) => ay - 1);
-        return weeksInAcademicYear(selectedAcademicYear - 1);
-      });
+      return;
     }
+
+    const current = selectedWeek ?? 1;
+    if (current > 1) {
+      setSelectedWeek(current - 1);
+      return;
+    }
+    const previousYear = selectedAcademicYear - 1;
+    setSelectedAcademicYear(previousYear);
+    setSelectedWeek(weeksInAcademicYear(previousYear));
   };
 
   const onNext = () => {
-    if (selectedView === "day") {
+    if (selectedView === 'day') {
       setSelectedDay((prev) => {
         if (!prev) return prev;
         const next = new Date(prev);
         next.setDate(prev.getDate() + 1);
         return next;
       });
-    } else {
-      setSelectedWeek((prev) => {
-        const current = prev ?? 1;
-        const max = weeksInAcademicYear(selectedAcademicYear);
-        if (current < max) return current + 1;
-        // wrap to next academic year
-        setSelectedAcademicYear((ay) => ay + 1);
-        return 1;
-      });
+      return;
     }
+
+    const current = selectedWeek ?? 1;
+    if (current < weeksInAcademicYear(selectedAcademicYear)) {
+      setSelectedWeek(current + 1);
+      return;
+    }
+    setSelectedAcademicYear(selectedAcademicYear + 1);
+    setSelectedWeek(1);
   };
 
-  // For day view, further filter to only show events on the selected day
-  const filteredDayEvents = selectedDay
-    ? filteredEvents.filter(
-        (ev) =>
-          ev.startAt.getFullYear() === selectedDay.getFullYear() &&
-          ev.startAt.getMonth() === selectedDay.getMonth() &&
-          ev.startAt.getDate() === selectedDay.getDate()
-      )
-    : filteredEvents;
+  const filteredDayEvents = useMemo(
+    () =>
+      selectedDay
+        ? filteredEvents.filter((ev) => isSameDay(ev.startAt, selectedDay))
+        : filteredEvents,
+    [filteredEvents, selectedDay],
+  );
 
   return (
-    <div className="px-6 md:px-10 lg:px-16 py-6 md:py-8 max-w-7xl mx-auto overflow-x-hidden md:overflow-x-visible">
-      <div className="mb-2 gap-4 flex items-center justify-between border-b pb-4">
-        <div className="flex flex-col md:flex-row md:items-center gap-2">
-          <Brand />
-          <span className="text-sm text-muted-foreground text-nowrap">
-            {headerTitle}
-          </span>
-        </div>
-        <div className="flex gap-2 items-center flex-wrap justify-end">
-          <EventTypeIndicator type="Lecture" />
-          <EventTypeIndicator type="ComputerExercise" />
-          <EventTypeIndicator type="LabExercise" />
-          <EventTypeIndicator type="SeminarExercise" />
-        </div>
+    <div className="px-4 md:px-10 lg:px-16 py-4 md:py-8 max-w-7xl mx-auto overflow-x-hidden overflow-y-visible">
+      <div className="mb-2 flex flex-col gap-3 border-b pb-4">
+        <PageHeader headerTitle={headerTitle} />
       </div>
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+      <div className="flex flex-col gap-4 overflow-x-hidden">
         <TimetableHeader
           selectedView={selectedView}
           selectedDay={selectedDay}
           selectedWeek={selectedWeek}
           onChangeView={(v) => setSelectedView(v)}
-          leftButton={<RoundedButton onClick={onPrev} icon={ChevronLeft} />}
-          rightButton={
-            <div className="flex items-center gap-2">
-              <RoundedButton onClick={onNext} icon={ChevronRight} />
-            </div>
-          }
+          onResetToToday={handleResetToToday}
+          onPrev={onPrev}
+          onNext={onNext}
         />
       </div>
 
-      {/* Controls - reorganized for mobile */}
-      <div className="mt-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-        {/* Buttons - horizontal row, same line on all screens */}
-        <div className="flex items-center gap-2 flex-wrap">
+      <TimetableControls
+        isDark={isDark}
+        setIsDark={setIsDark}
+        setShowFilterModal={setShowFilterModal}
+        publishedAt={publishedAt}
+      />
+
+      <ScheduleBuilderModal
+        open={showFilterModal}
+        selections={selections}
+        onAdd={addSelection}
+        onRemove={removeSelection}
+        onUpdatePicks={updatePicks}
+        onClose={() => setShowFilterModal(false)}
+      />
+
+      {!hasSelections ? (
+        <div className="mt-8 flex flex-col items-center gap-3 text-center text-muted-foreground">
+          {/* An empty timetable and a lost session used to look identical here — both just said
+              "still empty". For anyone who had already built a timetable that reads as data
+              loss, when in truth their subjects were on their account the whole time and the
+              app simply had no token to fetch them with. Say which of the two it is. */}
+          {isAuthenticated ? (
+            <p className="text-sm">Urnik je še prazen.</p>
+          ) : (
+            <>
+              <p className="text-sm font-medium text-foreground">
+                {t.auth.signedOutTitle}
+              </p>
+              <p className="max-w-prose text-sm leading-relaxed">
+                {t.auth.signedOutBody}
+              </p>
+              <button
+                className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700"
+                onClick={login}>
+                {t.auth.continueWithGoogle}
+              </button>
+            </>
+          )}
           <button
-            onClick={() => setIsDark((v) => !v)}
-            className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-transparent hover:border-border hover:bg-muted text-sm ${
-              isDark ? "text-foreground" : "text-muted-foreground"
-            }`}
-            aria-label="Toggle theme"
-            aria-pressed={isDark}
-            title={isDark ? t.common.switchToLight : t.common.switchToDark}
-          >
-            {isDark ? <Sun size={16} /> : <Moon size={16} />}
-            <span className="hidden sm:inline">
-              {isDark ? t.common.themeLight : t.common.themeDark}
-            </span>
-          </button>
-          <button
-            onClick={() => setLocale(locale === "sl" ? "en" : "sl")}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-transparent hover:border-border hover:bg-muted text-sm text-muted-foreground"
-            aria-label="Toggle language"
-            title={
-              locale === "sl" ? "Switch to English" : "Preklopi v slovenščino"
+            className={
+              isAuthenticated
+                ? 'inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700'
+                : 'inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-2 text-sm text-foreground hover:bg-primary/10'
             }
-          >
-            <Globe size={16} />
-            <span className="tabular-nums">{locale.toUpperCase()}</span>
+            onClick={() => setShowFilterModal(true)}>
+            Dodaj predmet
           </button>
-          <button
-            onClick={() => setShowFilterModal(true)}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-transparent hover:border-border hover:bg-muted text-sm text-muted-foreground"
-            aria-haspopup="dialog"
-          >
-            <SlidersHorizontal size={16} />
-            <span>{t.common.manageFilters}</span>
-          </button>
-        </div>
-
-        {/* Latest check - aligned properly */}
-        {latestCheck != null && (
-          <div className="text-xs text-muted-foreground flex items-center">
-            {t.common.latestCheckLabel}:{" "}
-            {new Intl.DateTimeFormat(t.locale, {
-              year: "numeric",
-              month: "2-digit",
-              day: "2-digit",
-              hour: "2-digit",
-              minute: "2-digit",
-              hour12: false,
-            }).format(new Date(latestCheck))}
-          </div>
-        )}
-      </div>
-
-      {loading && (
-        <div className="mt-4 text-sm text-muted-foreground">
-          {t.common.loadingTimetable}
-        </div>
-      )}
-      {error && <div className="mt-4 text-sm text-red-600">{error}</div>}
-
-      {selectedView === "day" ? (
-        <div className="relative flex h-full w-full mt-2 md:mt-4">
-          <TimeAxis hours={hours} hourHeight={HOUR_HEIGHT} />
-          <ScheduleColumn
-            hours={hours}
-            hourHeight={HOUR_HEIGHT}
-            dayStart={DAY_START}
-            events={filteredDayEvents}
-            onEventClick={(ev) => setSelectedEvent(ev)}
-          />
-          {/* current time indicator for Day view (only when the selected day is today) */}
-          {(() => {
-            // Only show indicator if selected day is today
-            if (!selectedDay) return null;
-            const today = new Date();
-            const isToday =
-              selectedDay.getFullYear() === today.getFullYear() &&
-              selectedDay.getMonth() === today.getMonth() &&
-              selectedDay.getDate() === today.getDate();
-
-            if (!isToday) return null;
-
-            // Check if current time is within visible hours
-            const parts = ljParts(now);
-            const currentHour = Number(
-              parts.find((p) => p.type === "hour")?.value ?? "0"
-            );
-
-            // Hide indicator if outside of visible hours (before 7 or after 21)
-            if (currentHour < DAY_START || currentHour > DAY_END) {
-              return null;
-            }
-
-            const columnHeight = (hours.length - 1) * HOUR_HEIGHT;
-            const rawTop = nowTopPx() + 8; // +8 to account for column mt-2
-            const top = Math.min(Math.max(rawTop, 8), columnHeight + 8); // clamp within visible area
-
-            return (
-              <div
-                className="pointer-events-none absolute inset-x-0 z-30"
-                style={{ top }}
-              >
-                {/* Red line across the schedule */}
-                <div className="absolute left-12 md:left-16 right-0 h-0 border-t-2 border-red-500" />
-
-                {/* Time label on the left - above time axis */}
-                <div className="absolute left-0 w-12 md:w-16 -translate-y-1/2 flex items-center justify-center z-40">
-                  <span className="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded shadow-lg">
-                    {nowLabel()}
-                  </span>
-                </div>
-
-                {/* Red dot at the start of the line */}
-                <div className="absolute left-12 md:left-16 w-2 h-2 bg-red-500 rounded-full -translate-x-1/2 -translate-y-1/2" />
-              </div>
-            );
-          })()}
         </div>
       ) : (
-        <div className="w-full mt-2 md:mt-4">
-          <WeekGrid
-            academicYear={selectedAcademicYear}
-            weekNumber={selectedWeek ?? 1}
-            hours={hours}
-            hourHeight={HOUR_HEIGHT}
-            dayStart={DAY_START}
-            events={filteredEvents}
-            onEventClick={(ev) => setSelectedEvent(ev)}
+        <>
+          {loading && (
+            <div className="mt-4 text-sm text-muted-foreground">
+              {t.common.loadingTimetable}
+            </div>
+          )}
+          {error && (
+            <div className="mt-4 text-sm text-red-600 break-words">{error}</div>
+          )}
+
+          {/* An empty grid used to say nothing at all, which is indistinguishable from a broken
+              one. Say it is empty, and name the period, so a wrong week is visible as a wrong
+              week instead of as missing data. */}
+          {!loading && !error && filteredEvents.length === 0 && (
+            <div className="mt-4 text-sm text-muted-foreground">
+              {selectedView === 'day'
+                ? 'Ta dan ni ničesar.'
+                : `Ta teden ni ničesar (${selectedAcademicYear}/${String(
+                    (selectedAcademicYear + 1) % 100,
+                  ).padStart(2, '0')}, teden ${selectedWeek ?? '?'}).`}
+            </div>
+          )}
+
+          {selectedView === 'day' ? (
+            <div className="relative flex h-full w-full mt-2 md:mt-4 overflow-x-auto overflow-y-visible">
+              <TimeAxis hours={hours} hourHeight={HOUR_HEIGHT} />
+              <ScheduleColumn
+                hours={hours}
+                hourHeight={HOUR_HEIGHT}
+                dayStart={DAY_START}
+                events={filteredDayEvents}
+                onEventClick={(ev) => setSelectedEvent(ev)}
+              />
+              {selectedDay && isSameDay(selectedDay, new Date()) && (
+                <CurrentTimeIndicator hourHeight={HOUR_HEIGHT} dayStart={DAY_START} />
+              )}
+            </div>
+          ) : (
+            <div className="w-full mt-2 md:mt-4">
+              <WeekGrid
+                academicYear={selectedAcademicYear}
+                weekNumber={selectedWeek ?? 1}
+                hours={hours}
+                hourHeight={HOUR_HEIGHT}
+                dayStart={DAY_START}
+                events={filteredEvents}
+                onEventClick={(ev) => setSelectedEvent(ev)}
+              />
+            </div>
+          )}
+
+          <TimetableEventBlockDetails
+            open={!!selectedEvent}
+            event={selectedEvent ?? undefined}
+            onClose={() => setSelectedEvent(null)}
           />
-        </div>
+
+          <footer className="mt-10 border-t pt-5 text-center text-xs text-muted-foreground">
+            <p className="mx-auto max-w-prose leading-relaxed">
+              {t.common.disclaimerPrefix}{' '}
+              <a
+                href="https://www.wise-tt.com/wtt_um_feri/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline decoration-transparent hover:decoration-inherit">
+                WISE
+              </a>{' '}
+              {t.common.timetable}
+            </p>
+            <p className="mx-auto mt-1.5 max-w-prose leading-relaxed opacity-80">
+              {t.common.disclaimerSuffix}
+            </p>
+            <p className="mt-3">
+              {t.common.builtBy}{' '}
+              <a
+                href="https://github.com/MuhamedKha"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline decoration-transparent hover:decoration-inherit">
+                MuhamedKha
+              </a>
+              {' & '}
+              <a
+                href="https://github.com/EdvinBec"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline decoration-transparent hover:decoration-inherit">
+                EdvinBec
+              </a>
+            </p>
+          </footer>
+        </>
       )}
-
-      <TimetableEventBlockDetails
-        open={!!selectedEvent}
-        event={selectedEvent ?? undefined}
-        onClose={() => setSelectedEvent(null)}
-      />
-
-      <OnboardingFiltersModal
-        open={showFilterModal}
-        classes={classes}
-        groups={groups}
-        initial={groupFilter}
-        onClose={() => setShowFilterModal(false)}
-        onSave={(sel) => {
-          setGroupFilter(sel);
-          setShowFilterModal(false);
-        }}
-      />
-
-      {/* Footer disclaimer */}
-      <div className="mt-10 pt-4 border-t text-xs text-muted-foreground text-center">
-        {t.common.disclaimerPrefix}{" "}
-        <a
-          href="https://www.wise-tt.com/wtt_um_feri/"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="underline decoration-transparent hover:decoration-inherit"
-        >
-          WISE
-        </a>{" "}
-        <span>{t.common.timetable} </span>
-        <a
-          href="https://github.com/EdvinBec/wiser"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="underline decoration-transparent hover:decoration-inherit p-0 block mt-1"
-        >
-          💻 EdvinBec
-        </a>
-      </div>
     </div>
   );
 }

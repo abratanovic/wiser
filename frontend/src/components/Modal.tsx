@@ -9,6 +9,7 @@ type ModalProps = {
   footer?: React.ReactNode;
   variant?: "card" | "canvas";
   showHeader?: boolean;
+  size?: "sm" | "default";
 };
 
 export function Modal({
@@ -19,6 +20,7 @@ export function Modal({
   footer,
   variant = "card",
   showHeader = true,
+  size = "default",
 }: ModalProps) {
   useEffect(() => {
     if (!open) return;
@@ -33,7 +35,7 @@ export function Modal({
   if (variant === "canvas") {
     return (
       <div
-        className="fixed inset-0 z-50 bg-[#0f0f10] text-neutral-100 antialiased"
+        className="fixed inset-0 z-[100] bg-[#0f0f10] text-neutral-100 antialiased"
         role="dialog"
         aria-modal="true"
         aria-label={title ?? "Dialog"}
@@ -54,7 +56,7 @@ export function Modal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
+      className="fixed inset-0 z-[100] flex items-center justify-center"
       role="dialog"
       aria-modal="true"
       aria-label={title ?? "Dialog"}
@@ -63,7 +65,7 @@ export function Modal({
         className="absolute inset-0 bg-black/50 backdrop-blur-[1px]"
         onClick={onClose}
       />
-      <div className="relative z-10 w-[96vw] max-w-2xl md:max-w-3xl rounded-2xl border border-border/50 bg-card shadow-2xl">
+      <div className={`relative z-10 w-[96vw] rounded-2xl border border-border/50 bg-card shadow-2xl ${size === "sm" ? "max-w-sm" : "max-w-2xl md:max-w-3xl"}`}>
         {showHeader ? (
           <div className="flex items-center justify-between border-b px-6 py-4">
             <h3 className="text-lg font-semibold tracking-tight">{title}</h3>
