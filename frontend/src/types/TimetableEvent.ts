@@ -1,4 +1,5 @@
 import type { TimetableEventType } from "./TimetableEventType";
+import type { TimetableSession } from "@/lib/wiseApi";
 
 export type TimetableEvent = {
   id: string;
@@ -26,4 +27,11 @@ export type TimetableEvent = {
   wiseType?: string;
   lecturers?: string[];
   groups?: string[];
+
+  /** Which timetable source (Wise or a manual faculty) the class came from. */
+  source: TimetableSession['source'];
+  status: TimetableSession['status'];
+  /** Manual classes only: the weekly slot and the original date of this occurrence. */
+  slotId?: number | null;
+  occurrenceDate?: string | null;
 };
