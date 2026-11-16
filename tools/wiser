@@ -9,7 +9,7 @@
   wiser logout           revoke every CLI token on the account and delete the local one
 
 Token: $WISER_TOKEN or ~/.config/wiser/token, written by `wiser login`; it lasts until revoked.
-API: $WISER_API, default https://urnik.online.
+API: $WISER_API, default https://urnik.bratanovic.top.
 """
 import json
 import os
@@ -21,7 +21,7 @@ from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 TZ = ZoneInfo("Europe/Ljubljana")
-API = os.environ.get("WISER_API", "https://urnik.online").rstrip("/")
+API = os.environ.get("WISER_API", "https://urnik.bratanovic.top").rstrip("/")
 TOKEN_FILE = os.path.expanduser("~/.config/wiser/token")
 
 
