@@ -4,9 +4,9 @@ import {useAuth} from '@/contexts/AuthContext.shared';
 import {ApiError, getStoredSelections, saveStoredSelections} from '@/lib/api';
 import {
   fetchPublishedAt,
-  fetchWiseTimetable,
+  fetchTimetable,
   type WiseSelection,
-  type WiseSession,
+  type TimetableSession,
 } from '@/lib/wiseApi';
 import type {TimetableEvent} from '@/types/TimetableEvent';
 import type {TimetableEventType} from '@/types/TimetableEventType';
@@ -58,10 +58,10 @@ function parseLjubljana(raw: string): Date {
   return new Date(utcMs - minutes * 60_000);
 }
 
-function toEvent(s: WiseSession): TimetableEvent {
+function toEvent(s: TimetableSession): TimetableEvent {
   return {
     id: s.id,
-    classId: s.subjectId,
+    classId: s.subjectKey,
     className: s.subject,
     instructorId: 0,
     instructorName: s.lecturers.join(', '),
@@ -283,7 +283,7 @@ export function useWiseSchedule({
       setLoading(true);
       setError(null);
       try {
-        const sessions = await fetchWiseTimetable(
+        const sessions = await fetchTimetable(
           range.from,
           range.to,
           selections,

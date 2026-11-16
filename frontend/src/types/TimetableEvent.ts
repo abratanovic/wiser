@@ -2,7 +2,7 @@ import type { TimetableEventType } from "./TimetableEventType";
 
 export type TimetableEvent = {
   id: string;
-  classId: number;
+  classId: string;
   className: string;
 
   instructorId: number;

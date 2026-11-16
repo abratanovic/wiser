@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using backend.Services.Timetable;
 
 namespace backend.Services.Wise;
 
@@ -163,15 +164,16 @@ public sealed class WiseClient
     /// applies match=all globally, so a single combined URL returns the cartesian product of
     /// every group against every subject rather than the chosen pairs.
     /// </summary>
-    public async Task<List<WiseSessionDto>> GetTimetableAsync(WiseTimetableRequest request, CancellationToken ct)
+    public async Task<List<TimetableSession>> GetTimetableAsync(TimetableQuery request, CancellationToken ct)
     {
         var from = request.From.ToDateTime(TimeOnly.MinValue);
         var to = request.To.ToDateTime(TimeOnly.MaxValue);
 
-        var sessions = new List<WiseSessionDto>();
+        var sessions = new List<TimetableSession>();
+        var source = TimetableSession.WiseSource(_school.ToUpperInvariant());
         var seen = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var selection in request.Selections)
+        foreach (var selection in request.WiseSelections)
         {
             List<WiseEvent> events;
             try
@@ -208,9 +210,10 @@ public sealed class WiseClient
                 var key = $"{ev.EventId}|{ev.Start:O}";
                 if (!seen.Add(key)) continue;
 
-                sessions.Add(new WiseSessionDto(
-                    Id: ev.EventId,
-                    SubjectId: selection.SubjectId,
+                sessions.Add(new TimetableSession(
+                    Id: $"wise:{ev.EventId}",
+                    Source: source,
+                    SubjectKey: $"wise:{selection.SubjectId}",
                     Subject: ev.Subject,
                     Code: null,
                     Type: ev.ExecutionType,
@@ -218,7 +221,8 @@ public sealed class WiseClient
                     Lecturers: ev.Lecturers,
                     Groups: ev.Groups,
                     StartAt: ev.Start.ToString("yyyy-MM-ddTHH:mm:ss"),
-                    FinishAt: ev.Finish.ToString("yyyy-MM-ddTHH:mm:ss")));
+                    FinishAt: ev.Finish.ToString("yyyy-MM-ddTHH:mm:ss"),
+                    Status: TimetableSession.Scheduled));
             }
         }
 
