@@ -309,12 +309,17 @@ function SubjectList({faculty, commit}: {faculty: ManualFaculty; commit: Commit}
   );
 }
 
-/** One subject. #7's per-subject group picker belongs in this row. */
+/** One subject, with its exercise-group pick. */
 function SubjectRow({subject, commit}: {subject: ManualSubject; commit: Commit}) {
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(subject.name);
   const {busy, errors, run} = useSubmit();
   const n = subject.slots.length;
+  const groups = [...new Set(subject.slots.flatMap((s) => (s.group ? [s.group] : [])))].sort((a, b) =>
+    a.localeCompare(b, 'sl', {numeric: true}),
+  );
+  const pick = (group: string | null) =>
+    run(() => commit((t) => updateManualSubject(t, subject.id, subject.name, group)));
 
   if (renaming)
     return (
@@ -324,7 +329,7 @@ function SubjectRow({subject, commit}: {subject: ManualSubject; commit: Commit})
           onSubmit={(e) => {
             e.preventDefault();
             run(async () => {
-              await commit((t) => updateManualSubject(t, subject.id, name.trim()));
+              await commit((t) => updateManualSubject(t, subject.id, name.trim(), subject.pickedGroup));
               setRenaming(false);
             });
           }}>
@@ -361,6 +366,18 @@ function SubjectRow({subject, commit}: {subject: ManualSubject; commit: Commit})
           onConfirm={() => run(() => commit((t) => deleteManualSubject(t, subject.id)))}
         />
       </span>
+      {groups.length > 0 && (
+        <div role='radiogroup' aria-label={`Skupina za ${subject.name}`} className='flex basis-full flex-wrap items-center gap-1.5'>
+          <span className='mr-1 text-xs text-muted-foreground'>Moja skupina</span>
+          {[null, ...groups].map((g) => (
+            <button key={g ?? ''} type='button' role='radio' aria-checked={subject.pickedGroup === g}
+              className={chip(subject.pickedGroup === g)} disabled={busy}
+              onClick={() => subject.pickedGroup !== g && pick(g)}>
+              {g ?? 'Vse'}
+            </button>
+          ))}
+        </div>
+      )}
       <FormError errors={errors} />
     </li>
   );
@@ -643,6 +660,7 @@ const FIELD_MESSAGES: Record<string, string> = {
   newstart: 'Vpiši veljaven začetek.',
   newend: 'Konec mora biti po začetku.',
   date: 'Ta termin na ta dan ne poteka več. Osveži urnik.',
+  pickedgroup: 'Predmet nima termina v tej skupini.',
 };
 
 function errorsOf(e: unknown): Record<string, string> {

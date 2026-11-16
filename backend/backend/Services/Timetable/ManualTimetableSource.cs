@@ -32,7 +32,7 @@ public sealed class ManualTimetableSource(AppDbContext db) : ITimetableSource
             var isoDay = date.DayOfWeek == DayOfWeek.Sunday ? 7 : (int)date.DayOfWeek;
 
             foreach (var subject in faculty.Subjects)
-            foreach (var slot in subject.Slots.Where(s => s.DayOfWeek == isoDay))
+            foreach (var slot in subject.Slots.Where(s => s.DayOfWeek == isoDay && InPickedGroup(subject, s)))
             {
                 var exception = slot.Exceptions.FirstOrDefault(e => e.OriginalDate == date);
                 if (exception?.Kind == SlotException.Moved) continue; // shown at its new time below
@@ -42,7 +42,7 @@ public sealed class ManualTimetableSource(AppDbContext db) : ITimetableSource
         }
 
         foreach (var subject in faculty.Subjects)
-        foreach (var slot in subject.Slots)
+        foreach (var slot in subject.Slots.Where(s => InPickedGroup(subject, s)))
         foreach (var move in slot.Exceptions.Where(e => e.Kind == SlotException.Moved))
         {
             var day = DateOnly.FromDateTime(move.NewStart!.Value);
@@ -69,6 +69,11 @@ public sealed class ManualTimetableSource(AppDbContext db) : ITimetableSource
             Status: status,
             SlotId: slot.Id,
             OccurrenceDate: date);
+
+    /// <summary>Ungrouped slots always show; a pick no slot uses any more (group renamed or deleted) hides nothing.</summary>
+    private static bool InPickedGroup(ManualSubject subject, ManualSlot slot) =>
+        slot.Group == null || subject.PickedGroup == null || slot.Group == subject.PickedGroup
+        || subject.Slots.All(s => s.Group != subject.PickedGroup);
 
     private static string WallTime(DateTime time) => time.ToString("yyyy-MM-ddTHH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
 }
